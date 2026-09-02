@@ -45,6 +45,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .kpi{background:#fff;border-radius:8px;padding:12px 16px;border:1px solid #e0e0e0;}
 .kpi .k-label{font-size:11px;color:#888;margin-bottom:6px;font-weight:500;}
 .kpi .k-val{font-size:20px;font-weight:600;color:#1a1a1a;}
+.kpi .k-val.over{color:#D85A30;}
 .kpi .k-sub{font-size:11px;color:#aaa;margin-top:2px;}
 .kpi .k-sub.up{color:#0F6E56;} .kpi .k-sub.dn{color:#D85A30;}
 
@@ -1355,17 +1356,20 @@ function syncClaimDetailWithFilter() {
 function renderQuality() {
   const d = filteredData;
   const qs = latestScope(['클레임건수','불량건수','검사수량','공정불량률']);
+  const ms = monthScope(); // 당월(가장 최근 실적 있는 달) 기준
   const claimCnt = d.reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
   const claimAmt = d.reduce((s,r)=>s+num(col(r,'클레임금액','ClaimAmt')),0);
   const defect   = d.reduce((s,r)=>s+num(col(r,'불량건수','DefectCnt')),0);
-  // 클레임률 = 불량수량 / 검사수량 (품질 KPI 산식). 생산수량(Ton)으로 나누던 계산 제거
-  const inspected = d.reduce((s,r)=>s+num(col(r,'검사수량')),0);
-  const claimRate = inspected ? (defect/inspected*100).toFixed(2)+'%' : '—';
+  // 클레임률 = 당월 클레임건수 ÷ 관리기준(월 5건 이하) 대비 비율. 100% 이하면 기준 이내, 넘으면 초과.
+  const CLAIM_STANDARD = 5;
+  const monthClaimCnt = ms.rows.reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
+  const claimRate = (monthClaimCnt / CLAIM_STANDARD * 100).toFixed(0)+'%';
   const dr = avgOf(d,'공정불량률');
   const defectRate = dr !== null ? dr.toFixed(2)+'%' : '—';
   setText('ql-rate', claimRate); setText('ql-cnt', claimCnt ? claimCnt.toLocaleString()+'건' : '—');
   setText('ql-cnt-sub', claimCnt ? '누적 클레임·컴플레인' : '데이터 없음');
-  setText('ql-rate-sub', inspected ? '불량 '+defect.toLocaleString()+'ea / 검사 '+inspected.toLocaleString()+'ea' : '데이터 없음');
+  setText('ql-rate-sub', ms.label+' '+monthClaimCnt+'건 / 기준 '+CLAIM_STANDARD+'건 이하');
+  setClass('ql-rate', monthClaimCnt > CLAIM_STANDARD ? 'k-val over' : 'k-val');
   setText('ql-defect-sub', dr !== null ? qs.label+' 공정 불량률' : '데이터 없음');
   setText('ql-amt', claimAmt ? fmt(claimAmt) : '—'); setText('ql-defect', defectRate);
 
