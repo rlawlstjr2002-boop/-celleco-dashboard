@@ -908,6 +908,13 @@ function monthCounts(data) {
   return arr;
 }
 
+/* '원료재고-일반' 같은 카테고리 값에서 '원료' 같은 짧은 태그만 뽑아냄.
+   재고현황(전체) 차트의 품목명 옆에 어떤 재고구분인지 표시할 때 사용. */
+function stockCatTag(raw) {
+  const s = String(raw || '').trim();
+  return s.replace(/재고-(일반|장기)$/,'').replace(/재고$/,'');
+}
+
 /* ── 전체 렌더 ── */
 function renderAll() {
   renderOverview();
@@ -980,9 +987,13 @@ function renderOverview() {
   // 재고 (재고수량 데이터가 없으면 위 makeChart의 '데이터 없음' 처리로 넘어감)
   // 도넛형은 품목이 얼마나 있는지 한눈에 비교하기 어렵다는 피드백으로 막대형으로 변경.
   // 그룹 기준 컬럼도 실제 데이터에 없는 '제품'이 아니라 'Product'로 수정 (그동안 전부 '기타'로만 잡히던 원인).
-  const stockMap = groupBy(d,'Product','재고수량');
+  // D.I-WATER(정제수)는 원료지만 의미 없는 항목이라 순위 산정에서 제외.
+  const stockRowsOv = d.filter(r=>String(col(r,'Product')).trim()!=='D.I-WATER');
+  const stockMap = groupBy(stockRowsOv,'Product','재고수량');
+  const stockCatOv = {};
+  stockRowsOv.forEach(r => { const p=String(col(r,'Product')).trim(); if(p && !stockCatOv[p]) stockCatOv[p]=stockCatTag(col(r,'카테고리','Category')); });
   const sE = Object.entries(stockMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  makeChart('ch-ov-stock','bar',sE.map(([k])=>k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+  makeChart('ch-ov-stock','bar',sE.map(([k])=>stockCatOv[k]?`${k} (${stockCatOv[k]})`:k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
     {dataLabels:true, yMax: headroom(sE.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
 
   // 클레임 / 컴플레인 (구분값을 데이터에서 그대로 사용)
@@ -1233,9 +1244,13 @@ function renderMfg() {
     y1:{position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{font:{size:10},precision:0}}
   }}});
 
-  const stockMap = groupBy(d,'Product','재고수량');
+  // D.I-WATER(정제수)는 원료지만 의미 없는 항목이라 순위 산정에서 제외.
+  const stockRowsMf = d.filter(r=>String(col(r,'Product')).trim()!=='D.I-WATER');
+  const stockMap = groupBy(stockRowsMf,'Product','재고수량');
+  const stockCatMf = {};
+  stockRowsMf.forEach(r => { const p=String(col(r,'Product')).trim(); if(p && !stockCatMf[p]) stockCatMf[p]=stockCatTag(col(r,'카테고리','Category')); });
   const sE = Object.entries(stockMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  makeChart('ch-mf-stock','bar',sE.map(([k])=>k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+  makeChart('ch-mf-stock','bar',sE.map(([k])=>stockCatMf[k]?`${k} (${stockCatMf[k]})`:k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
     {dataLabels:true, yMax: headroom(sE.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
 
   // 적기대응률 / 납기준수율 (자료가 없는 달은 선을 끊어서 표시)
