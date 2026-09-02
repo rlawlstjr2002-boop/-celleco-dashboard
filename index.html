@@ -248,7 +248,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="chart-grid c2">
         <div class="chart-card"><div class="c-title">제조 실적 (제조량 KG / Batch)</div><div class="chart-wrap"><canvas id="ch-mf-prod"></canvas></div></div>
-        <div class="chart-card"><div class="c-title">재고현황</div><div class="chart-wrap"><canvas id="ch-mf-stock"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">재고현황 (전체)</div><div class="chart-wrap"><canvas id="ch-mf-stock"></canvas></div></div>
       </div>
       <div class="chart-grid c2">
         <div class="chart-card"><div class="c-title">적기대응률 / 납기준수율</div><div class="chart-wrap"><canvas id="ch-mg-delivery"></canvas></div></div>
@@ -256,6 +256,12 @@ tr:last-child td{border-bottom:none;}
           <table><thead><tr><th>구역</th><th>총CAPA</th><th>현CAPA</th><th>잔여CAPA</th><th>사용률</th><th>잔여율</th></tr></thead>
           <tbody id="loc-capa-body"><tr><td colspan="6" class="no-data">데이터 없음</td></tr></tbody></table>
         </div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:repeat(4,1fr);">
+        <div class="chart-card"><div class="c-title">완제품 재고현황</div><div class="chart-wrap"><canvas id="ch-mg-stock-fg"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">벌크 재고현황</div><div class="chart-wrap"><canvas id="ch-mg-stock-bulk"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">부자재 재고현황</div><div class="chart-wrap"><canvas id="ch-mg-stock-mat"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">원료 재고현황</div><div class="chart-wrap"><canvas id="ch-mg-stock-raw"></canvas></div></div>
       </div>
     </div>
 
@@ -1226,6 +1232,21 @@ function renderMfg() {
     {label:'적기대응률',data:monthAvgOrNull(d,'적기대응률'),borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.08)',fill:true,tension:0.3,pointRadius:4,spanGaps:false},
     {label:'납기준수율',data:monthAvgOrNull(d,'납기준수율'),borderColor:'#1D9E75',backgroundColor:'transparent',tension:0.3,pointRadius:4,spanGaps:false}
   ],{legend:true,dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'pct',extra:{layout:{padding:{top:18}},scales:{y:{max:120,ticks:{callback:v=>v+'%',font:{size:10}},beginAtZero:true},x:{ticks:{font:{size:10}}}}}});
+
+  // 재고현황을 4개 구분(완제품/벌크/부자재/원료)으로 분리.
+  // 구글시트의 '카테고리' 컬럼에 아래 값이 들어있는 행만 각 차트에 잡힙니다:
+  //   완제품재고 / 벌크재고 / 부자재재고 / 원료재고
+  const stockByCategory = (catValue, canvasId) => {
+    const rows = d.filter(r => String(col(r,'카테고리','Category')).trim() === catValue);
+    const map = groupBy(rows,'Product','재고수량');
+    const entries = Object.entries(map).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    makeChart(canvasId,'bar',entries.map(([k])=>k),[{label:'재고수량',data:entries.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+      {dataLabels:true, yMax: headroom(entries.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
+  };
+  stockByCategory('완제품재고','ch-mg-stock-fg');
+  stockByCategory('벌크재고','ch-mg-stock-bulk');
+  stockByCategory('부자재재고','ch-mg-stock-mat');
+  stockByCategory('원료재고','ch-mg-stock-raw');
 
   // 창고 로케이션별 CAPA 현황 표 - 이전 '설비별 가동률/수율' 차트는 대응하는 수집 데이터가 아예 없어
   // 계속 빈 차트였음 -> 창고 로케이션 데이터(구역별 총/현재/잔여 CAPA)로 교체.
