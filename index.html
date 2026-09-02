@@ -269,8 +269,8 @@ tr:last-child td{border-bottom:none;}
     <!-- ⑤ QUALITY -->
     <div class="tab-content" id="tab-quality">
       <div class="kpi-row">
-        <div class="kpi"><div class="k-label">당월 클레임률 (연간)</div><div class="k-val" id="ql-rate">—</div><div class="k-sub" id="ql-rate-sub">클레임률</div></div>
-        <div class="kpi"><div class="k-label">당월 클레임 건수 (연간)</div><div class="k-val" id="ql-cnt">—</div><div class="k-sub" id="ql-cnt-sub">건수</div></div>
+        <div class="kpi"><div class="k-label">월간 클레임률</div><div class="k-val" id="ql-rate">—</div><div class="k-sub" id="ql-rate-sub">클레임률</div></div>
+        <div class="kpi"><div class="k-label">연간 클레임 건수</div><div class="k-val" id="ql-cnt">—</div><div class="k-sub" id="ql-cnt-sub">건수</div></div>
         <div class="kpi"><div class="k-label">당월 클레임 금액 (연간)</div><div class="k-val" id="ql-amt">—</div><div class="k-sub" id="ql-amt-sub">금액</div></div>
         <div class="kpi"><div class="k-label">당월 불량률 (연간)</div><div class="k-val" id="ql-defect">—</div><div class="k-sub" id="ql-defect-sub">불량률</div></div>
       </div>
@@ -1357,12 +1357,15 @@ function renderQuality() {
   const d = filteredData;
   const qs = latestScope(['클레임건수','불량건수','검사수량','공정불량률']);
   const ms = monthScope(); // 당월(가장 최근 실적 있는 달) 기준
-  const claimCnt = d.reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
-  const claimAmt = d.reduce((s,r)=>s+num(col(r,'클레임금액','ClaimAmt')),0);
+  // '클레임건수' 컬럼은 실제 클레임(클레임구분 있음)뿐 아니라 품질팀 불량유형별현황 기록도 같이 쌓여있어서,
+  // 진짜 클레임 집계 시에는 클레임구분 값이 있는 행만 걸러서 셉니다.
+  const isRealClaim = r => String(col(r,'클레임구분','ClaimType')||'').trim() !== '';
+  const claimCnt = d.filter(isRealClaim).reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
+  const claimAmt = d.filter(isRealClaim).reduce((s,r)=>s+num(col(r,'클레임금액','ClaimAmt')),0);
   const defect   = d.reduce((s,r)=>s+num(col(r,'불량건수','DefectCnt')),0);
-  // 클레임률 = 당월 클레임건수 ÷ 관리기준(월 5건 이하) 대비 비율. 100% 이하면 기준 이내, 넘으면 초과.
+  // 클레임률 = 당월(월간) 클레임건수 ÷ 관리기준(월 5건 이하) 대비 비율. 100% 이하면 기준 이내, 넘으면 초과.
   const CLAIM_STANDARD = 5;
-  const monthClaimCnt = ms.rows.reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
+  const monthClaimCnt = ms.rows.filter(isRealClaim).reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
   const claimRate = (monthClaimCnt / CLAIM_STANDARD * 100).toFixed(0)+'%';
   const dr = avgOf(d,'공정불량률');
   const defectRate = dr !== null ? dr.toFixed(2)+'%' : '—';
