@@ -160,7 +160,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="chart-grid c3">
         <div class="chart-card"><div class="c-title">포장 CAPA <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(EA, 참고용)</span> / 완제품 생산수량</div><div class="chart-wrap"><canvas id="ch-ov-capa"></canvas></div></div>
-        <div class="chart-card"><div class="c-title">재고현황</div><div class="chart-wrap"><canvas id="ch-ov-stock"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">재고현황 (전체) <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(일반 vs 장기재고 비중)</span></div><div class="chart-wrap"><canvas id="ch-ov-stock"></canvas></div></div>
         <div class="chart-card"><div class="c-title">클레임 / 컴플레인</div><div class="chart-wrap"><canvas id="ch-ov-claim"></canvas></div></div>
       </div>
     </div>
@@ -915,6 +915,26 @@ function stockCatTag(raw) {
   return s.replace(/재고-(일반|장기)$/,'').replace(/재고$/,'');
 }
 
+/* 재고현황(전체) 차트 렌더링 공통 함수: 완제품/벌크/부자재/원료 4개 카테고리별
+   일반재고%·장기재고% 그룹 막대차트. Overview·Manufacturing 두 탭에서 공용으로 씀. */
+function renderStockOverviewChart(d, canvasId) {
+  const stockCats4 = [['완제품재고','완제품'],['벌크재고','벌크'],['부자재재고','부자재'],['원료재고','원료']];
+  const catNormalPct = [], catAgedPct = [];
+  stockCats4.forEach(([cat]) => {
+    const n = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-일반').length;
+    const a = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-장기').length;
+    const total = n+a;
+    catNormalPct.push(total ? n/total*100 : 0);
+    catAgedPct.push(total ? a/total*100 : 0);
+  });
+  makeChart(canvasId,'bar',stockCats4.map(([,label])=>label),[
+    {label:'일반재고',data:catNormalPct,backgroundColor:'#378ADD',borderRadius:3},
+    {label:'장기재고(6개월+)',data:catAgedPct,backgroundColor:'#D85A30',borderRadius:3}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'pct',extra:{scales:{
+    x:{ticks:{font:{size:11},autoSkip:false}},
+    y:{max:120,beginAtZero:true,ticks:{callback:v=>v+'%',font:{size:10}}}}}});
+}
+
 /* ── 전체 렌더 ── */
 function renderAll() {
   renderOverview();
@@ -984,17 +1004,8 @@ function renderOverview() {
     {label:'포장CAPA(상한)',data:monthTotals(d,'포장CAPA'),type:'line',borderColor:'#E8B84B',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,order:1}
   ],{legend:true,dataLabels:true,dataLabelsFmt:'won',yMax:headroom(monthTotals(d,'포장CAPA'),1.15),extra:{layout:{padding:{top:20}}}});
 
-  // 재고 (재고수량 데이터가 없으면 위 makeChart의 '데이터 없음' 처리로 넘어감)
-  // 도넛형은 품목이 얼마나 있는지 한눈에 비교하기 어렵다는 피드백으로 막대형으로 변경.
-  // 그룹 기준 컬럼도 실제 데이터에 없는 '제품'이 아니라 'Product'로 수정 (그동안 전부 '기타'로만 잡히던 원인).
-  // D.I-WATER(정제수)는 원료지만 의미 없는 항목이라 순위 산정에서 제외.
-  const stockRowsOv = d.filter(r=>String(col(r,'Product')).trim()!=='D.I-WATER');
-  const stockMap = groupBy(stockRowsOv,'Product','재고수량');
-  const stockCatOv = {};
-  stockRowsOv.forEach(r => { const p=String(col(r,'Product')).trim(); if(p && !stockCatOv[p]) stockCatOv[p]=stockCatTag(col(r,'카테고리','Category')); });
-  const sE = Object.entries(stockMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  makeChart('ch-ov-stock','bar',sE.map(([k])=>stockCatOv[k]?`${k} (${stockCatOv[k]})`:k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
-    {dataLabels:true, yMax: headroom(sE.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
+  // 재고현황(전체) — 완제품/벌크/부자재/원료 4개 카테고리별 일반%·장기% 그룹 막대차트 (Manufacturing 탭과 동일 로직).
+  renderStockOverviewChart(d, 'ch-ov-stock');
 
   // 클레임 / 컴플레인 (구분값을 데이터에서 그대로 사용)
   makeChart('ch-ov-claim','bar',PERIODS(),claimDatasets(d),{legend:true,dataLabels:true,dataLabelsMode:'group',extra:{scales:{
@@ -1244,22 +1255,8 @@ function renderMfg() {
     y1:{position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{font:{size:10},precision:0}}
   }}});
 
-  // 재고현황(전체) = 완제품/벌크/부자재/원료 4개 카테고리별 일반재고%·장기재고% 그룹 막대차트.
-  const stockCats4 = [['완제품재고','완제품'],['벌크재고','벌크'],['부자재재고','부자재'],['원료재고','원료']];
-  const catNormalPct = [], catAgedPct = [];
-  stockCats4.forEach(([cat]) => {
-    const n = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-일반').length;
-    const a = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-장기').length;
-    const total = n+a;
-    catNormalPct.push(total ? n/total*100 : 0);
-    catAgedPct.push(total ? a/total*100 : 0);
-  });
-  makeChart('ch-mf-stock','bar',stockCats4.map(([,label])=>label),[
-    {label:'일반재고',data:catNormalPct,backgroundColor:'#378ADD',borderRadius:3},
-    {label:'장기재고(6개월+)',data:catAgedPct,backgroundColor:'#D85A30',borderRadius:3}
-  ],{legend:true,dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'pct',extra:{scales:{
-    x:{ticks:{font:{size:11},autoSkip:false}},
-    y:{max:120,beginAtZero:true,ticks:{callback:v=>v+'%',font:{size:10}}}}}});
+  // 재고현황(전체) — 완제품/벌크/부자재/원료 4개 카테고리별 일반%·장기% 그룹 막대차트 (Overview 탭과 동일 로직).
+  renderStockOverviewChart(d, 'ch-mf-stock');
 
   // 적기대응률 / 납기준수율 (자료가 없는 달은 선을 끊어서 표시)
   makeChart('ch-mg-delivery','line',PERIODS(),[
