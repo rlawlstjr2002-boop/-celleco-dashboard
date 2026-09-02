@@ -248,14 +248,14 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="chart-grid c2">
         <div class="chart-card"><div class="c-title">제조 실적 (제조량 KG / Batch)</div><div class="chart-wrap"><canvas id="ch-mf-prod"></canvas></div></div>
-        <div class="chart-card"><div class="c-title">재고현황 (전체)</div><div class="chart-wrap"><canvas id="ch-mf-stock"></canvas></div></div>
-      </div>
-      <div class="chart-grid c2">
-        <div class="chart-card"><div class="c-title">적기대응률 / 납기준수율</div><div class="chart-wrap"><canvas id="ch-mg-delivery"></canvas></div></div>
         <div class="chart-card"><div class="c-title">창고 로케이션별 CAPA 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(구역별, 랙 기준)</span></div>
           <table><thead><tr><th>구역</th><th>총CAPA</th><th>현CAPA</th><th>잔여CAPA</th><th>사용률</th><th>잔여율</th></tr></thead>
           <tbody id="loc-capa-body"><tr><td colspan="6" class="no-data">데이터 없음</td></tr></tbody></table>
         </div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">적기대응률 / 납기준수율</div><div class="chart-wrap"><canvas id="ch-mg-delivery"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">재고현황 (전체) <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(일반 vs 장기재고 평균 비중)</span></div><div class="chart-wrap"><canvas id="ch-mf-stock"></canvas></div></div>
       </div>
       <div class="chart-grid" style="grid-template-columns:repeat(4,1fr);">
         <div class="chart-card"><div class="c-title">완제품 재고현황</div><div class="chart-wrap"><canvas id="ch-mg-stock-fg"></canvas></div></div>
@@ -1244,14 +1244,22 @@ function renderMfg() {
     y1:{position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{font:{size:10},precision:0}}
   }}});
 
-  // D.I-WATER(정제수)는 원료지만 의미 없는 항목이라 순위 산정에서 제외.
-  const stockRowsMf = d.filter(r=>String(col(r,'Product')).trim()!=='D.I-WATER');
-  const stockMap = groupBy(stockRowsMf,'Product','재고수량');
-  const stockCatMf = {};
-  stockRowsMf.forEach(r => { const p=String(col(r,'Product')).trim(); if(p && !stockCatMf[p]) stockCatMf[p]=stockCatTag(col(r,'카테고리','Category')); });
-  const sE = Object.entries(stockMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  makeChart('ch-mf-stock','bar',sE.map(([k])=>stockCatMf[k]?`${k} (${stockCatMf[k]})`:k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
-    {dataLabels:true, yMax: headroom(sE.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
+  // 재고현황(전체) = 완제품/벌크/부자재/원료 4개 카테고리별 일반재고%·장기재고% 그룹 막대차트.
+  const stockCats4 = [['완제품재고','완제품'],['벌크재고','벌크'],['부자재재고','부자재'],['원료재고','원료']];
+  const catNormalPct = [], catAgedPct = [];
+  stockCats4.forEach(([cat]) => {
+    const n = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-일반').length;
+    const a = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-장기').length;
+    const total = n+a;
+    catNormalPct.push(total ? n/total*100 : 0);
+    catAgedPct.push(total ? a/total*100 : 0);
+  });
+  makeChart('ch-mf-stock','bar',stockCats4.map(([,label])=>label),[
+    {label:'일반재고',data:catNormalPct,backgroundColor:'#378ADD',borderRadius:3},
+    {label:'장기재고(6개월+)',data:catAgedPct,backgroundColor:'#D85A30',borderRadius:3}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'pct',extra:{scales:{
+    x:{ticks:{font:{size:11},autoSkip:false}},
+    y:{max:120,beginAtZero:true,ticks:{callback:v=>v+'%',font:{size:10}}}}}});
 
   // 적기대응률 / 납기준수율 (자료가 없는 달은 선을 끊어서 표시)
   makeChart('ch-mg-delivery','line',PERIODS(),[
