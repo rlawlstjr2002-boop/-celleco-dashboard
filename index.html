@@ -897,6 +897,17 @@ function monthTotals(data, valKey) {
   return arr;
 }
 
+/* 월별 "건수"(행 개수)를 세는 버전. 금액/수량 합산이 아니라 단순 카운트가 필요한 차트(재고 품목 수 등)에 사용 */
+function monthCounts(data) {
+  const P = PERIODS();
+  const arr = new Array(P.length).fill(0);
+  data.forEach(r => {
+    const idx = P.indexOf(periodKeyOf(r));
+    if (idx >= 0) arr[idx] += 1;
+  });
+  return arr;
+}
+
 /* ── 전체 렌더 ── */
 function renderAll() {
   renderOverview();
@@ -1233,25 +1244,19 @@ function renderMfg() {
     {label:'납기준수율',data:monthAvgOrNull(d,'납기준수율'),borderColor:'#1D9E75',backgroundColor:'transparent',tension:0.3,pointRadius:4,spanGaps:false}
   ],{legend:true,dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'pct',extra:{layout:{padding:{top:18}},scales:{y:{max:120,ticks:{callback:v=>v+'%',font:{size:10}},beginAtZero:true},x:{ticks:{font:{size:10}}}}}});
 
-  // 재고현황을 4개 구분(완제품/벌크/부자재/원료) x 2계열(일반/장기재고)로 표시.
+  // 재고현황을 4개 구분(완제품/벌크/부자재/원료) x 2계열(일반/장기재고)로, 월별 "품목 건수"로 표시.
   // 구글시트의 '카테고리' 컬럼에 아래 값이 들어있는 행만 각 차트에 잡힙니다:
   //   완제품재고-일반 / 완제품재고-장기 / 벌크재고-일반 / 벌크재고-장기 / 부자재재고-일반 / 부자재재고-장기 / 원료재고-일반 / 원료재고-장기
   // (장기재고 판정 기준: 최근 6개월 연속 출고 0건인 품목)
   const stockByCategory = (baseCat, canvasId) => {
     const normalRows = d.filter(r => String(col(r,'카테고리','Category')).trim() === baseCat + '-일반');
     const agedRows   = d.filter(r => String(col(r,'카테고리','Category')).trim() === baseCat + '-장기');
-    const normalMap = groupBy(normalRows,'Product','재고수량');
-    const agedMap   = groupBy(agedRows,'Product','재고수량');
-    const totalMap = {};
-    Object.keys(normalMap).forEach(k => totalMap[k] = (totalMap[k]||0) + normalMap[k]);
-    Object.keys(agedMap).forEach(k => totalMap[k] = (totalMap[k]||0) + agedMap[k]);
-    const top = Object.entries(totalMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k])=>k);
-    const normalData = top.map(k => normalMap[k] || 0);
-    const agedData = top.map(k => agedMap[k] || 0);
-    makeChart(canvasId,'bar',top,[
-      {label:'일반재고',data:normalData,backgroundColor:'#378ADD',borderRadius:3},
-      {label:'장기재고(6개월+)',data:agedData,backgroundColor:'#D85A30',borderRadius:3}
-    ],{legend:true,dataLabels:true,dataLabelsMode:'value',yMax: headroom(top.map((k,i)=>normalData[i]+agedData[i])), extra:{layout:{padding:{top:26}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
+    makeChart(canvasId,'bar',PERIODS(),[
+      {label:'일반재고',data:monthCounts(normalRows),backgroundColor:'#378ADD',borderRadius:3},
+      {label:'장기재고(6개월+)',data:monthCounts(agedRows),backgroundColor:'#D85A30',borderRadius:3}
+    ],{legend:true,dataLabels:true,dataLabelsMode:'group',extra:{scales:{
+      x:{ticks:{font:{size:10},autoSkip:false}},
+      y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
   };
   stockByCategory('완제품재고','ch-mg-stock-fg');
   stockByCategory('벌크재고','ch-mg-stock-bulk');
