@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>세레코 전사 대시보드</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+
+/* 상단 필터바 */
+.topbar{background:#d6e8f5;padding:8px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;border-bottom:1px solid #b8d4e8;}
+.topbar .logo{margin-left:auto;display:flex;gap:4px;}
+.logo-dot{width:18px;height:18px;border:2px solid #5a8db0;border-radius:3px;opacity:0.7;}
+.filter-group{display:flex;flex-direction:column;gap:2px;}
+.filter-group label{font-size:10px;color:#555;font-weight:500;}
+.filter-group select{font-size:11px;padding:2px 6px;border:1px solid #b0c8d8;border-radius:4px;background:#fff;color:#333;min-width:70px;}
+.view-toggle-btn{border:none;background:#fff;color:#333;font-size:11px;padding:4px 10px;cursor:pointer;}
+.view-toggle-btn.active{background:#1e5070;color:#fff;}
+
+/* 업로드 버튼 */
+.upload-wrap{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #b0c8d8;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#3a7ab5;}
+.upload-wrap:hover{background:#e8f2fb;}
+.upload-wrap input{display:none;}
+
+/* 레이아웃 */
+.layout{display:flex;flex:1;overflow:hidden;}
+
+/* 사이드 탭 */
+.sidebar{width:140px;background:#1e5070;flex-shrink:0;display:flex;flex-direction:column;padding-top:8px;}
+.tab-btn{padding:14px 16px;font-size:13px;color:#a8c8e0;cursor:pointer;border-left:3px solid transparent;transition:all 0.15s;}
+.tab-btn:hover{background:#17405a;color:#fff;}
+.tab-btn.active{background:#17405a;color:#fff;border-left:3px solid #5bc0eb;}
+
+/* 메인 콘텐츠 */
+.main{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* KPI 카드 */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+.kpi{background:#fff;border-radius:8px;padding:12px 16px;border:1px solid #e0e0e0;}
+.kpi .k-label{font-size:11px;color:#888;margin-bottom:6px;font-weight:500;}
+.kpi .k-val{font-size:20px;font-weight:600;color:#1a1a1a;}
+.kpi .k-sub{font-size:11px;color:#aaa;margin-top:2px;}
+.kpi .k-sub.up{color:#0F6E56;} .kpi .k-sub.dn{color:#D85A30;}
+
+/* 차트 그리드 */
+.chart-grid{display:grid;gap:12px;margin-bottom:12px;}
+.chart-grid.c2{grid-template-columns:1fr 1fr;}
+.chart-grid.c3{grid-template-columns:2fr 1fr 1fr;}
+.chart-grid.c12{grid-template-columns:1fr 1fr;}
+.chart-card{background:#fff;border-radius:8px;border:1px solid #e0e0e0;padding:14px;}
+.chart-card.wide{grid-column:span 2;}
+.c-title{font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;}
+.chart-wrap{position:relative;width:100%;height:180px;}
+.chart-wrap.tall{height:220px;}
+
+/* 테이블 */
+table{width:100%;border-collapse:collapse;font-size:12px;}
+/* 동적으로 삽입되는 표(클레임 상세 등)가 긴 텍스트 때문에 페이지 전체를 옆으로 밀지 않도록,
+   표 자신 안에서만 가로 스크롤되게 하고 셀 텍스트는 줄바꿈되게 한다 */
+.table-scroll{overflow-x:auto;max-width:100%;}
+.table-scroll table{table-layout:fixed;}
+.table-scroll td, .table-scroll th{word-break:break-word;overflow-wrap:break-word;}
+th{background:#f5f5f3;font-weight:600;color:#555;padding:6px 8px;text-align:left;border-bottom:1px solid #e0e0e0;}
+td{padding:5px 8px;border-bottom:1px solid #f0f0f0;color:#333;}
+tr:last-child td{border-bottom:none;}
+.badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:99px;}
+.badge.done{background:#E1F5EE;color:#0F6E56;}
+.badge.prog{background:#E6F1FB;color:#185FA5;}
+.badge.warn{background:#FAEEDA;color:#854F0B;}
+
+/* 업로드 안내 */
+.no-data{text-align:center;color:#bbb;font-size:13px;padding:40px 0;}
+/* 데이터가 없는 차트 자리에 표시 (0을 1로 바꿔 가짜 도넛을 그리던 문제 대체) */
+.chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#c2c2c2;font-size:12px;background:#fafafa;border:1px dashed #e5e5e5;border-radius:6px;}
+
+/* 섹션 타이틀 */
+.sec{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.05em;margin:14px 0 8px;}
+</style>
+</head>
+<body>
+
+<!-- 상단 필터바 -->
+<div class="topbar">
+  <label class="upload-wrap" title="엑셀 파일 업로드 (기존 데이터에 이어붙임)">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
+    📂 엑셀 업로드
+  </label>
+  <button type="button" onclick="if(confirm('누적된 데이터를 모두 지울까요?'))resetData()" title="누적 데이터 초기화" style="font-size:11px;color:#D85A30;background:#fff;border:1px solid #e0b0a0;border-radius:6px;padding:4px 10px;cursor:pointer;">↺ 초기화</button>
+  <span id="uploadStatus" style="font-size:11px;color:#3a7ab5;"></span>
+
+  <div class="filter-group"><label>보기 단위</label>
+    <div style="display:flex;border:1px solid #cfd8e3;border-radius:6px;overflow:hidden;">
+      <button type="button" class="view-toggle-btn active" data-mode="month" onclick="setViewMode('month')">월별</button>
+      <button type="button" class="view-toggle-btn" data-mode="week" onclick="setViewMode('week')">주별</button>
+    </div>
+  </div>
+  <div class="filter-group"><label>Year</label>
+    <select id="f-year" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><label>Month Name</label>
+    <select id="f-month" onchange="onMonthFilterChange()"><option value="">All</option></select></div>
+  <div class="filter-group"><label>Week</label>
+    <select id="f-week" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><label>Product</label>
+    <select id="f-product" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><label>Sales Rep</label>
+    <select id="f-rep" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><label>Status</label>
+    <select id="f-status" onchange="applyFilters()"><option value="">All</option></select></div>
+  <div class="filter-group"><label>Performance Fl.</label>
+    <select id="f-perf" onchange="applyFilters()"><option value="">All</option></select></div>
+
+  <div class="logo" style="margin-left:auto;">
+    <div class="logo-dot"></div><div class="logo-dot"></div>
+    <div class="logo-dot"></div><div class="logo-dot"></div>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- 사이드바 탭 -->
+  <div class="sidebar">
+    <div class="tab-btn active" onclick="switchTab('overview',this)">Overview</div>
+    <div class="tab-btn" onclick="switchTab('sales',this)">Sales</div>
+    <div class="tab-btn" onclick="switchTab('rnd',this)">R&amp;D</div>
+    <div class="tab-btn" onclick="switchTab('mfg',this)">Manufacturing</div>
+    <div class="tab-btn" onclick="switchTab('quality',this)">Quality</div>
+    <div class="tab-btn" onclick="switchTab('mgmt',this)">Management</div>
+  </div>
+
+  <!-- 메인 -->
+  <div class="main">
+
+    <!-- ① OVERVIEW -->
+    <div class="tab-content active" id="tab-overview">
+      <div class="kpi-row">
+        <div class="kpi"><div class="k-label">당월 매출목표 (연간)</div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;">
+            <div><div class="k-val" id="ov-target">—</div><div class="k-sub" id="ov-target-sub">당월 목표</div></div>
+            <div style="text-align:right;border-left:1px solid #eee;padding-left:8px;"><div class="k-val" id="ov-target-annual" style="font-size:14px;color:#185FA5;">—</div><div class="k-sub" id="ov-target-annual-sub">누적목표</div></div>
+          </div>
+        </div>
+        <div class="kpi"><div class="k-label">당월 매출실적 (연간)</div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;">
+            <div><div class="k-val" id="ov-actual">—</div><div class="k-sub" id="ov-actual-sub">당월 실적</div></div>
+            <div style="text-align:right;border-left:1px solid #eee;padding-left:8px;"><div class="k-val" id="ov-actual-cum" style="font-size:14px;color:#185FA5;">—</div><div class="k-sub">누적실적</div></div>
+          </div>
+        </div>
+        <div class="kpi"><div class="k-label">당월 증감</div><div class="k-val" id="ov-diff">—</div><div class="k-sub" id="ov-diff-sub">전년 대비</div></div>
+        <div class="kpi"><div class="k-label">당월 달성률</div><div class="k-val" id="ov-rate">—</div><div class="k-sub" id="ov-rate-sub">달성률</div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">매출처별 매출 현황</div><div class="chart-wrap tall"><canvas id="ch-ov-client"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">신제품 매출 / 목표</div><div class="chart-wrap tall"><canvas id="ch-ov-rnd"></canvas></div></div>
+      </div>
+      <div class="chart-grid c3">
+        <div class="chart-card"><div class="c-title">포장 CAPA <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(EA, 참고용)</span> / 완제품 생산수량</div><div class="chart-wrap"><canvas id="ch-ov-capa"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">재고현황</div><div class="chart-wrap"><canvas id="ch-ov-stock"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">클레임 / 컴플레인</div><div class="chart-wrap"><canvas id="ch-ov-claim"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ③ SALES -->
+    <div class="tab-content" id="tab-sales">
+      <div class="kpi-row">
+        <div class="kpi"><div class="k-label">당월 매출목표 (연간)</div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;">
+            <div><div class="k-val" id="sl-target">—</div><div class="k-sub" id="sl-target-sub">당월 목표</div></div>
+            <div style="text-align:right;border-left:1px solid #eee;padding-left:8px;"><div class="k-val" id="sl-target-annual" style="font-size:14px;color:#185FA5;">—</div><div class="k-sub" id="sl-target-annual-sub">누적목표</div></div>
+          </div>
+        </div>
+        <div class="kpi"><div class="k-label">당월 매출실적 (연간)</div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;">
+            <div><div class="k-val" id="sl-actual">—</div><div class="k-sub" id="sl-actual-sub">당월 실적</div></div>
+            <div style="text-align:right;border-left:1px solid #eee;padding-left:8px;"><div class="k-val" id="sl-actual-cum" style="font-size:14px;color:#185FA5;">—</div><div class="k-sub">누적실적</div></div>
+          </div>
+        </div>
+        <div class="kpi"><div class="k-label">증감</div><div class="k-val" id="sl-diff">—</div><div class="k-sub" id="sl-diff-sub">전년 대비</div></div>
+        <div class="kpi"><div class="k-label">달성률</div><div class="k-val" id="sl-rate">—</div><div class="k-sub" id="sl-rate-sub">달성률</div></div>
+      </div>
+      <div class="chart-grid c3">
+        <div class="chart-card wide"><div class="c-title">전체 매출 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(단위: 백만원)</span></div><div class="chart-wrap tall"><canvas id="ch-sl-main"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">담당자별 목표/실적</div><div class="chart-wrap tall"><canvas id="ch-sl-rep"></canvas></div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">ODM/OEM/OTM</div><div class="chart-wrap"><canvas id="ch-sl-type"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">제형별 매출현황</div><div class="chart-wrap"><canvas id="ch-sl-form"></canvas></div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">충전(1차 포장)별 매출 현황</div><div class="chart-wrap"><canvas id="ch-sl-new"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">거래처별 매출 상세</div>
+          <table><thead><tr><th>거래처</th><th>유형</th><th>매출액(원)</th><th>매출건수</th><th>비중</th></tr></thead>
+          <tbody id="sl-client-body"><tr><td colspan="5" class="no-data">데이터 없음</td></tr></tbody></table>
+        </div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:1fr;">
+        <div class="chart-card"><div class="c-title">미수채권 (거래처별)
+          <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">— 미상환 잔액 상위 8곳</span></div>
+          <div class="chart-wrap tall"><canvas id="ch-mg-ar"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ③ R&D -->
+    <div class="tab-content" id="tab-rnd">
+      <div class="kpi-row">
+        <div class="kpi"><div class="k-label">당월 신제품 매출목표 (연간)</div><div class="k-val" id="rd-target">—</div><div class="k-sub">목표</div></div>
+        <div class="kpi"><div class="k-label">당월 신제품 매출실적 (연간)</div><div class="k-val" id="rd-actual">—</div><div class="k-sub">실적</div></div>
+        <div class="kpi"><div class="k-label">증감 (연간)</div><div class="k-val" id="rd-diff">—</div><div class="k-sub">전년 대비</div></div>
+        <div class="kpi"><div class="k-label">달성률 (연간)</div><div class="k-val" id="rd-rate">—</div><div class="k-sub">달성률</div></div>
+      </div>
+      <div class="chart-grid c3">
+        <div class="chart-card wide"><div class="c-title">신제품 매출 / 목표</div><div class="chart-wrap tall"><canvas id="ch-rd-main"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">견본제안 / Fix 건수</div><div class="chart-wrap tall"><canvas id="ch-rd-fix"></canvas></div></div>
+      </div>
+      <div class="chart-grid c3">
+        <div class="chart-card wide"><div class="c-title">제형별 매출액</div><div class="chart-wrap"><canvas id="ch-rd-form"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">개발의뢰 진행현황 (담당자별)</div>
+          <table><thead><tr><th>담당자</th><th>의뢰건수</th><th>평균 리드타임</th><th>완료율</th></tr></thead>
+          <tbody id="rd-prod-body"><tr><td colspan="4" class="no-data">데이터 없음</td></tr></tbody></table>
+        </div>
+      </div>
+      <div class="sec">업무 현황</div>
+      <div class="chart-grid" style="grid-template-columns:repeat(5,1fr);">
+        <div class="chart-card"><div class="c-title">CT건수</div><div class="chart-wrap"><canvas id="ch-rd-ct"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">전성분발송건수</div><div class="chart-wrap"><canvas id="ch-rd-ingr"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">문안검수건수</div><div class="chart-wrap"><canvas id="ch-rd-copy"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">단가검수건수</div><div class="chart-wrap"><canvas id="ch-rd-price"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">수출서류건수</div><div class="chart-wrap"><canvas id="ch-rd-export"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ④ MANUFACTURING -->
+    <div class="tab-content" id="tab-mfg">
+      <div class="kpi-row">
+        <div class="kpi"><div class="k-label">당월 생산량 (연간)</div><div class="k-val" id="mf-qty">—</div><div class="k-sub" id="mf-qty-sub">수량</div></div>
+        <div class="kpi"><div class="k-label">당월 생산금액 (연간)</div><div class="k-val" id="mf-amt">—</div><div class="k-sub" id="mf-amt-sub">금액</div></div>
+        <div class="kpi"><div class="k-label">당월 계획달성률 (연간)</div><div class="k-val" id="mf-rate">—</div><div class="k-sub" id="mf-rate-sub">달성률</div></div>
+        <div class="kpi"><div class="k-label">당월 임률 (연간)</div><div class="k-val" id="mf-wage">—</div><div class="k-sub" id="mf-wage-sub">임률</div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">포장 CAPA <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(EA, 참고용)</span> / 완제품 생산수량</div><div class="chart-wrap tall"><canvas id="ch-mf-capa"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">포장 생산실적 현황 (라인별)</div><div class="chart-wrap tall"><canvas id="ch-mf-pkg"></canvas></div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">제조 실적 (제조량 KG / Batch)</div><div class="chart-wrap"><canvas id="ch-mf-prod"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">재고현황</div><div class="chart-wrap"><canvas id="ch-mf-stock"></canvas></div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">적기대응률 / 납기준수율</div><div class="chart-wrap"><canvas id="ch-mg-delivery"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">창고 로케이션별 CAPA 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(구역별, 랙 기준)</span></div>
+          <table><thead><tr><th>구역</th><th>총CAPA</th><th>현CAPA</th><th>잔여CAPA</th><th>사용률</th><th>잔여율</th></tr></thead>
+          <tbody id="loc-capa-body"><tr><td colspan="6" class="no-data">데이터 없음</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ QUALITY -->
+    <div class="tab-content" id="tab-quality">
+      <div class="kpi-row">
+        <div class="kpi"><div class="k-label">당월 클레임률 (연간)</div><div class="k-val" id="ql-rate">—</div><div class="k-sub" id="ql-rate-sub">클레임률</div></div>
+        <div class="kpi"><div class="k-label">당월 클레임 건수 (연간)</div><div class="k-val" id="ql-cnt">—</div><div class="k-sub" id="ql-cnt-sub">건수</div></div>
+        <div class="kpi"><div class="k-label">당월 클레임 금액 (연간)</div><div class="k-val" id="ql-amt">—</div><div class="k-sub" id="ql-amt-sub">금액</div></div>
+        <div class="kpi"><div class="k-label">당월 불량률 (연간)</div><div class="k-val" id="ql-defect">—</div><div class="k-sub" id="ql-defect-sub">불량률</div></div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:1fr;">
+        <div class="chart-card"><div class="c-title">클레임 / 컴플레인 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(막대 안 숫자는 비중 · 막대 더블클릭: 해당 월 강조 + 사유 표시 / 다시 더블클릭: 전체 보기 복귀)</span></div><div class="chart-wrap tall"><canvas id="ch-ql-claim"></canvas></div></div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:1fr;" id="ql-claim-detail-wrap" hidden>
+        <div class="chart-card">
+          <div class="c-title">클레임 사유 상세 <span id="ql-claim-detail-month" style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;"></span>
+            <span onclick="document.getElementById('f-month').value='';updateWeekOptions();applyFilters();" style="float:right;cursor:pointer;color:#aaa;font-weight:400;text-transform:none;">✕ 전체보기로 닫기</span>
+          </div>
+          <div id="ql-claim-detail-table" class="table-scroll"></div>
+        </div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:1fr;">
+        <div class="chart-card"><div class="c-title">불량 유형별 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(막대 안 숫자는 비중)</span></div><div class="chart-wrap"><canvas id="ch-ql-defect"></canvas></div></div>
+      </div>
+      <div class="sec">검사 현황</div>
+      <div class="chart-grid" style="grid-template-columns:repeat(4,1fr);">
+        <div class="chart-card"><div class="c-title">원료검사</div><div class="chart-wrap"><canvas id="ch-ql-raw"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">벌크검사</div><div class="chart-wrap"><canvas id="ch-ql-bulk"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">포장재검사</div><div class="chart-wrap"><canvas id="ch-ql-pkgmat"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">공정검사</div><div class="chart-wrap"><canvas id="ch-ql-proc"></canvas></div></div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:repeat(4,1fr);">
+        <div class="chart-card"><div class="c-title">완제품검사</div><div class="chart-wrap"><canvas id="ch-ql-fg"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">미생물검사</div><div class="chart-wrap"><canvas id="ch-ql-micro"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">분석검사</div><div class="chart-wrap"><canvas id="ch-ql-analysis"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">출하검사</div><div class="chart-wrap"><canvas id="ch-ql-ship"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ⑥ MANAGEMENT -->
+    <div class="tab-content" id="tab-mgmt">
+      <div class="kpi-row">
+        <div class="kpi"><div class="k-label">당월 매입금액 (연간)</div><div class="k-val" id="mg-buy">—</div><div class="k-sub" id="mg-buy-sub">매입</div></div>
+        <div class="kpi"><div class="k-label">당월 물류금액 (연간)</div><div class="k-val" id="mg-logi">—</div><div class="k-sub" id="mg-logi-sub">물류</div></div>
+        <div class="kpi"><div class="k-label">당월 인원현황 (연간)</div><div class="k-val" id="mg-hc">—</div><div class="k-sub" id="mg-hc-sub">입/퇴사, 현인원</div></div>
+        <div class="kpi"><div class="k-label">퇴사율</div><div class="k-val" id="mg-turn">—</div><div class="k-sub" id="mg-turn-sub">퇴사율</div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">원료, 부자재 매입현황</div><div class="chart-wrap tall"><canvas id="ch-mg-material"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">물류 비용 현황</div><div class="chart-wrap tall"><canvas id="ch-mg-logistics"></canvas></div></div>
+      </div>
+      <div class="chart-grid c2">
+        <div class="chart-card"><div class="c-title">월별 인원 현황</div><div class="chart-wrap"><canvas id="ch-mg-hr"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">차종별 물류비</div><div class="chart-wrap"><canvas id="ch-mg-car"></canvas></div></div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+/* ══════════════════════════════════════════════
+   월별/주별 보기 전환
+   원본 데이터에 실제 일자가 있던 항목(매출, 수주, 생산실적, 매입, R&D 샘플, 클레임 등)에는
+   'Week' 값(예: '3주')이 채워져 있어, 이 값 기준으로 모든 월별 차트를 주별로도 볼 수 있다.
+   ══════════════════════════════════════════════ */
+let viewMode = 'month';   // 'month' | 'week'
+let WEEKS = [];           // rawData에 존재하는 주차들 (숫자 오름차순)
+
+function PERIODS() { return viewMode === 'week' ? WEEKS : MONTHS; }
+function periodKeyOf(r) {
+  return viewMode === 'week'
+    ? String(col(r,'Week','week','주','주차'))
+    : String(col(r,'Month Name','월','month'));
+}
+function computeWeeks() {
+  const set = new Set();
+  rawData.forEach(r => { const w = String(col(r,'Week','week','주','주차')); if (w && w !== 'undefined') set.add(w); });
+  WEEKS = [...set].sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0));
+}
+function setViewMode(mode) {
+  if (viewMode === mode) return;
+  viewMode = mode;
+  document.querySelectorAll('.view-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  renderAll();
+}
+
+const COLORS = ['#378ADD','#1D9E75','#D85A30','#E8B84B','#533AB7','#D4537E','#639922','#BA7517','#A32D2D','#0F6E56'];
+
+// 회사 전체 연간 매출목표.
+// null 이면 엑셀의 '매출목표' 컬럼 누적 합계를 사용합니다(= 근거 있는 숫자만 표시).
+// 확정된 연간 목표가 있으면 여기에 숫자로 넣으세요. 예) const ANNUAL_SALES_TARGET = 12000000000;
+const ANNUAL_SALES_TARGET = null;
+
+/* 막대 라벨 플러그인
+   opts.dataLabels:true 인 차트에만 적용. opts.dataLabelsMode:
+     'default' … 데이터셋 1개 기준. 값은 막대 위, 비중(%)은 막대 안쪽
+     'group'   … 막대 데이터셋 전부에 값(위) + 비중(안쪽)
+     'stack'   … 누적 막대의 세그먼트 비중만 막대 안쪽
+     'value'   … 값만 표시 (비율 지표처럼 비중이 의미 없는 차트)
+   opts.dataLabelsFmt: 'won'(억/만 축약) | 'num' | 'pct' */
+function labelNum(v, fmt) {
+  const n = Number(v) || 0;
+  if (fmt === 'pct') return (Math.round(n * 10) / 10) + '%';
+  if (fmt === 'won') {
+    const a = Math.abs(n);
+    if (a >= 1e8) return (n / 1e8).toFixed(1) + '억';
+    if (a >= 1e4) return Math.round(n / 1e4).toLocaleString() + '만';
+    return Math.round(n).toLocaleString();
+  }
+  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+const valuePctLabelsPlugin = {
+  id: 'valuePctLabels',
+  afterDatasetsDraw(chart) {
+    const cfg = chart.options.plugins && chart.options.plugins.valuePctLabels;
+    if (!cfg || !cfg.enabled) return;
+    const { ctx } = chart;
+    const mode = cfg.mode || 'default';
+    const fmt  = cfg.fmt || 'num';
+
+    const drawValue = (x, y, val, size, slotW) => {
+      const txt = labelNum(val, fmt);
+      let f = size;
+      ctx.font = `${f}px ${FONT}`;
+      while (slotW && ctx.measureText(txt).width > slotW && f > 8) { f--; ctx.font = `${f}px ${FONT}`; }
+      ctx.fillStyle = '#333';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      // 라벨이 차트 영역 위쪽(범례 자리)까지 밀려 올라가 겹치지 않도록 하한선을 둔다
+      const areaTop = (chart.chartArea && chart.chartArea.top) || 0;
+      const ty = Math.max(y - 5, areaTop + f + 2);
+      ctx.fillText(txt, x, ty);
+    };
+    const drawPct = (x, top, bottom, pct, size, barW) => {
+      const h = bottom - top;
+      if (h < 15) return;                       // 막대가 너무 낮으면 생략
+      const put = (txt, f, vertical) => {
+        ctx.save();
+        ctx.font = `bold ${f}px ${FONT}`;
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0,0,0,0.45)';
+        ctx.shadowBlur = 3;
+        if (vertical) {
+          ctx.translate(x, (top + bottom) / 2);
+          ctx.rotate(-Math.PI / 2);
+          ctx.fillText(txt, 0, 0);
+        } else {
+          ctx.fillText(txt, x, (top + bottom) / 2);
+        }
+        ctx.restore();
+      };
+      const fits = (txt, f, room) => { ctx.font = `bold ${f}px ${FONT}`; return ctx.measureText(txt).width <= room; };
+
+      const wRoom = (barW ? barW - 2 : Infinity);   // 막대 안에 쓸 수 있는 폭
+      const long = pct.toFixed(1) + '%', short = Math.round(pct) + '%';
+
+      // ① 소수점까지 가로로 (글자를 9px까지 줄여가며 시도)
+      for (let f = size; f >= 9; f--) {
+        if (fits(long, f, wRoom) && h >= f + 4) return put(long, f, false);
+      }
+      // ② 소수점 버리고 가로로 (7px까지 줄여가며 시도)
+      for (let f = size; f >= 7; f--) {
+        if (fits(short, f, wRoom) && h >= f + 4) return put(short, f, false);
+      }
+      // ④ 어떻게도 안 들어가면 생략 (막대 밖으로 삐져나오게 두지 않는다)
+    };
+
+    const propsOf = el => el.getProps ? el.getProps(['x','y','base','width'], true)
+                                      : { x: el.x, y: el.y, base: el.base, width: el.width };
+
+    // 누적 막대: 세그먼트 비중만
+    if (mode === 'stack') {
+      const barIdx = [];
+      chart.data.datasets.forEach((ds, i) => { if (!ds.type || ds.type === 'bar') barIdx.push(i); });
+      const totals = new Array(chart.data.labels.length).fill(0);
+      barIdx.forEach(i => (chart.data.datasets[i].data || []).forEach((v, k) => { totals[k] += Number(v || 0); }));
+      const tops = new Array(chart.data.labels.length).fill(Infinity);
+      const xs   = new Array(chart.data.labels.length).fill(null);
+      ctx.save();
+      barIdx.forEach(dsIndex => {
+        const meta = chart.getDatasetMeta(dsIndex);
+        const data = chart.data.datasets[dsIndex].data || [];
+        meta.data.forEach((el, i) => {
+          const val = Number(data[i] || 0);
+          if (!val || !totals[i]) return;
+          const pr = propsOf(el);
+          const top = Math.min(pr.y, pr.base);
+          if (top < tops[i]) { tops[i] = top; xs[i] = pr.x; }
+          drawPct(pr.x, top, Math.max(pr.y, pr.base), val / totals[i] * 100, 12, pr.width);
+        });
+      });
+      // 누적 합계는 막대 위에 표시
+      const nzT = totals.filter(v => v).length;
+      totals.forEach((t, i) => { if (t && xs[i] !== null) drawValue(xs[i], tops[i], t, nzT > 8 ? 9 : 11); });
+      ctx.restore();
+      return;
+    }
+
+    // group / value: 막대(및 value 모드의 선) 전부에 라벨
+    if (mode === 'group' || mode === 'value') {
+      ctx.save();
+      // 막대 라벨과 선(line) 라벨이 우연히 같은 높이에 찍혀 겹쳐 보이는 문제 방지:
+      // 막대 라벨을 먼저 그린 x축 인덱스별 y위치를 기억해뒀다가, 선 라벨이 너무 가까우면 더 위로 띄운다.
+      const barLabelY = new Array(chart.data.labels.length).fill(null);
+      chart.data.datasets.forEach((ds, dsIndex) => {
+        const isLine = ds.type === 'line';
+        if (isLine && mode !== 'value') return;
+        if (ds.noLabel) return; // 이 데이터셋은 값 라벨을 아예 그리지 않음
+        const meta = chart.getDatasetMeta(dsIndex);
+        const data = ds.data || [];
+        const total = data.reduce((a, v) => a + Number(v || 0), 0);
+        const nonZero = data.filter(v => Number(v || 0)).length;
+        const size = nonZero > 8 ? 9 : 10;
+        meta.data.forEach((el, i) => {
+          const val = Number(data[i] || 0);
+          if (!val) return;
+          const pr = propsOf(el);
+          let labelY = pr.y - (isLine ? dsIndex * 14 : 0);
+          if (isLine && barLabelY[i] !== null) {
+            const minGap = size + 10;
+            if (Math.abs(labelY - barLabelY[i]) < minGap) labelY = barLabelY[i] - minGap;
+          }
+          drawValue(pr.x, labelY, val, size);
+          if (!isLine) barLabelY[i] = labelY;
+          if (mode === 'group' && total && !isLine) {
+            drawPct(pr.x, Math.min(pr.y, pr.base), Math.max(pr.y, pr.base), val / total * 100, 11, pr.width);
+          }
+        });
+      });
+      ctx.restore();
+      return;
+    }
+
+    // default: 첫 막대 데이터셋 기준
+    const dsIndex = chart.data.datasets.findIndex(ds => !ds.type || ds.type === 'bar');
+    if (dsIndex < 0) return;
+    const meta = chart.getDatasetMeta(dsIndex);
+    const data = chart.data.datasets[dsIndex].data || [];
+    const total = data.reduce((a, v) => a + Number(v || 0), 0);
+    const nonZero = data.filter(v => Number(v || 0)).length;
+    ctx.save();
+    meta.data.forEach((el, i) => {
+      const val = Number(data[i] || 0);
+      if (!val) return;
+      const pr = propsOf(el);
+      drawValue(pr.x, pr.y, val, nonZero > 8 ? 9 : 11);
+      if (total) drawPct(pr.x, Math.min(pr.y, pr.base), Math.max(pr.y, pr.base), val / total * 100, 12, pr.width);
+    });
+    ctx.restore();
+  }
+};
+Chart.register(valuePctLabelsPlugin);
+
+/* ── 구글시트 자동 연동 설정 ──
+   구글시트 상단 메뉴 파일 > 공유 > 웹에 게시 (File > Share > Publish to web)에서
+   'Data' 탭을 CSV 형식으로 게시하면 발급되는 링크를 아래에 넣으세요.
+   예: https://docs.google.com/spreadsheets/d/e/2PACX-xxxxxxxx/pub?gid=0&single=true&output=csv
+   비워두면(빈 문자열) 자동 로드를 시도하지 않고 기존처럼 엑셀 업로드로만 동작합니다. */
+const GOOGLE_SHEET_CSV_URL = "";
+
+let rawData = [];
+let filteredData = [];
+let charts = {};
+const monthClickBound = new Set(); // 더블클릭 필터 리스너를 캔버스당 한 번만 붙이기 위한 가드
+
+/* 구글시트 CSV를 자동으로 불러와서 rawData를 채움. 페이지 로드 시 1회 실행,
+   이후 5분마다 재시도(열어둔 채로 최신화되도록). 실패해도 조용히 무시하고
+   기존 엑셀 업로드 방식은 그대로 살아있음. */
+async function loadFromGoogleSheet(isRetry) {
+  if (!GOOGLE_SHEET_CSV_URL) return;
+  try {
+    const res = await fetch(GOOGLE_SHEET_CSV_URL + (GOOGLE_SHEET_CSV_URL.includes('?') ? '&' : '?') + '_=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: true });
+    if (!parsed.data || !parsed.data.length) throw new Error('빈 데이터');
+    rawData = parsed.data;
+    populateFilters();
+    applyFilters();
+    const now = new Date().toLocaleTimeString('ko-KR');
+    document.getElementById('uploadStatus').textContent = `✓ 구글시트 자동 로드 · ${rawData.length}행 (${now} 기준)`;
+  } catch (err) {
+    if (!isRetry) {
+      document.getElementById('uploadStatus').textContent = '⚠ 구글시트 자동 로드 실패 — 엑셀 업로드로 진행하세요 (' + err.message + ')';
+    }
+  }
+}
+
+/* ── 탭 전환 ── */
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+}
+
+/* ── 엑셀 불러오기 ──
+   매달 파일을 하나씩 올리는 흐름을 지원하기 위해, 새 파일은 기존 데이터를 지우지 않고
+   "이어붙입니다"(누적). 같은 파일을 다시 올리면 중복 집계될 수 있으니, 다시 올릴 땐
+   먼저 "초기화" 버튼으로 지우고 올려주세요. */
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const newRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      rawData = rawData.concat(newRows);
+      populateFilters();
+      applyFilters();
+      document.getElementById('uploadStatus').textContent = `✓ 이번 파일 ${newRows.length}행 추가 · 누적 ${rawData.length}행 (${file.name})`;
+    } catch(err) {
+      document.getElementById('uploadStatus').textContent = '❌ 오류: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  document.getElementById('fileInput').value = '';
+}
+
+/* 누적 데이터 초기화 */
+function resetData() {
+  rawData = [];
+  populateFilters();
+  applyFilters();
+  document.getElementById('uploadStatus').textContent = '데이터가 초기화되었습니다.';
+}
+
+
+/* 헤더 정규화 캐시: 엑셀 컬럼명에 공백/대소문자 차이가 있어도 매칭되게 */
+const _normCache = new WeakMap();
+function col(row, ...keys) {
+  // 1) 정확히 일치하는 헤더 우선
+  for (const k of keys) if (row[k] !== undefined && row[k] !== '') return row[k];
+  // 2) 폴백: 앞뒤 공백 제거 + 소문자로 정규화해서 재매칭
+  let norm = _normCache.get(row);
+  if (!norm) {
+    norm = {};
+    for (const rk in row) norm[String(rk).trim().toLowerCase()] = row[rk];
+    _normCache.set(row, norm);
+  }
+  for (const k of keys) {
+    const v = norm[String(k).trim().toLowerCase()];
+    if (v !== undefined && v !== '') return v;
+  }
+  return '';
+}
+
+function num(v) { return parseFloat(String(v).replace(/[^0-9.\-]/g,'')) || 0; }
+
+/* ── 필터 옵션 채우기 ── */
+function populateFilters() {
+  computeWeeks();
+  const maps = {
+    'f-year':    ['Year','year','연도'],
+    'f-month':   ['Month Name','month','월'],
+    'f-product': ['Product','product','제품'],
+    'f-rep':     ['Sales Rep','담당자','영업사원'],
+    'f-status':  ['Status','status','상태'],
+    'f-perf':    ['Performance Flag','Performance Fl.','performance'],
+  };
+  for (const [id, keys] of Object.entries(maps)) {
+    const sel = document.getElementById(id);
+    let vals = [...new Set(rawData.map(r => String(col(r, ...keys))).filter(Boolean))].sort();
+    if (id === 'f-month') vals = MONTHS.filter(m => vals.includes(m));   // 1월~12월 순서
+    sel.innerHTML = '<option value="">All</option>' + vals.map(v => `<option>${v}</option>`).join('');
+  }
+  updateWeekOptions();
+}
+
+/* Week 옵션은 선택된 Month(월)에 속한 주차만 보여준다. Month을 "All"로 두면 전체 주차가 나온다.
+   Month을 바꿀 때마다 다시 호출해서, "1월" 선택 시 그 달의 주차만 남도록 한다. */
+function updateWeekOptions() {
+  const sel = document.getElementById('f-week');
+  const fMonth = document.getElementById('f-month').value;
+  const prev = sel.value;
+  const scoped = fMonth ? rawData.filter(r => String(col(r,'Month Name','month','월')) === fMonth) : rawData;
+  let vals = [...new Set(scoped.map(r => String(col(r,'Week','week','주','주차'))).filter(Boolean))];
+  vals.sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0));
+  sel.innerHTML = '<option value="">All</option>' + vals.map(v => `<option>${v}</option>`).join('');
+  sel.value = vals.includes(prev) ? prev : '';   // 더 이상 유효하지 않은 주차는 선택 해제
+}
+
+/* Month 필터가 바뀔 때 Week 옵션도 그 달 기준으로 다시 좁혀준다 */
+function onMonthFilterChange() {
+  updateWeekOptions();
+  applyFilters();
+}
+
+/* ── 필터 적용 ── */
+function applyFilters() {
+  const fYear  = document.getElementById('f-year').value;
+  const fMonth = document.getElementById('f-month').value;
+  const fWeek  = document.getElementById('f-week').value;
+  const fProd  = document.getElementById('f-product').value;
+  const fRep   = document.getElementById('f-rep').value;
+  const fStat  = document.getElementById('f-status').value;
+  const fPerf  = document.getElementById('f-perf').value;
+
+  filteredData = rawData.filter(r => {
+    if (fYear  && String(col(r,'Year','year','연도')) !== fYear)   return false;
+    if (fMonth && String(col(r,'Month Name','month','월')) !== fMonth) return false;
+    if (fWeek  && String(col(r,'Week','week','주','주차')) !== fWeek) return false;
+    if (fProd  && String(col(r,'Product','product','제품')) !== fProd) return false;
+    if (fRep   && String(col(r,'Sales Rep','담당자','영업사원')) !== fRep) return false;
+    if (fStat  && String(col(r,'Status','status','상태')) !== fStat) return false;
+    if (fPerf  && String(col(r,'Performance Flag','Performance Fl.','performance')) !== fPerf) return false;
+    return true;
+  });
+
+  renderAll();
+}
+
+/* Month 필터만 제외하고 나머지 필터(Year/Week/Product/Rep/Status/Perf)는 그대로 적용한 데이터.
+   "당월" 값과 별도로 "누적(연간)" 값을 계산할 때 사용합니다 — 특정 달을 선택해도 누적 수치는 줄어들지 않습니다. */
+function yearScopeData() {
+  const fYear  = document.getElementById('f-year').value;
+  const fWeek  = document.getElementById('f-week').value;
+  const fProd  = document.getElementById('f-product').value;
+  const fRep   = document.getElementById('f-rep').value;
+  const fStat  = document.getElementById('f-status').value;
+  const fPerf  = document.getElementById('f-perf').value;
+
+  return rawData.filter(r => {
+    if (fYear  && String(col(r,'Year','year','연도')) !== fYear)   return false;
+    if (fWeek  && String(col(r,'Week','week','주','주차')) !== fWeek) return false;
+    if (fProd  && String(col(r,'Product','product','제품')) !== fProd) return false;
+    if (fRep   && String(col(r,'Sales Rep','담당자','영업사원')) !== fRep) return false;
+    if (fStat  && String(col(r,'Status','status','상태')) !== fStat) return false;
+    if (fPerf  && String(col(r,'Performance Flag','Performance Fl.','performance')) !== fPerf) return false;
+    return true;
+  });
+}
+
+/* "당월" 기준 데이터 — Month 필터를 고른 경우 그 달, 고르지 않았으면 데이터가 있는 마지막 달.
+   (예전에는 Month 필터 미선택 시 "당월"이 전체 기간 합계가 되어, 목표는 특정 월 값인데
+    실적은 전체 기간 합계로 잡히면서 달성률이 잘못 계산되었습니다.) */
+function monthScope() {
+  const fMonth = document.getElementById('f-month').value;
+  const ys = yearScopeData();
+  if (fMonth) return { rows: ys.filter(r => String(col(r,'Month Name','월','month')) === fMonth), label: fMonth };
+  // 실적(매출액)이 있는 마지막 달을 당월로 본다. 목표만 입력된 미래 월은 제외.
+  let idx = -1;
+  ys.forEach(r => {
+    if (num(col(r,'매출액','Sales','actual','매출실적')) <= 0) return;
+    const i = MONTHS.indexOf(String(col(r,'Month Name','월','month')));
+    if (i > idx) idx = i;
+  });
+  if (idx < 0) ys.forEach(r => { const i = MONTHS.indexOf(String(col(r,'Month Name','월','month'))); if (i > idx) idx = i; });
+  if (idx < 0) return { rows: ys, label: '전체' };
+  return { rows: ys.filter(r => String(col(r,'Month Name','월','month')) === MONTHS[idx]), label: MONTHS[idx] };
+}
+
+/* 지정한 컬럼에 값이 있는 "마지막 달"을 기준으로 스코프를 잡는다.
+   (제조·매입·물류처럼 수집 시점이 매출과 다른 지표가 당월에 자료가 없어 '—'로만 보이던 문제 해결) */
+function latestScope(keys) {
+  const fMonth = document.getElementById('f-month').value;
+  const ys = yearScopeData();
+  const has = r => keys.some(k => num(col(r, k)) > 0);
+  if (fMonth) return { rows: ys.filter(r => String(col(r,'Month Name','월','month')) === fMonth), label: fMonth };
+  let idx = -1;
+  ys.forEach(r => { if (!has(r)) return; const i = MONTHS.indexOf(String(col(r,'Month Name','월','month'))); if (i > idx) idx = i; });
+  if (idx < 0) return { rows: [], label: '' };
+  return { rows: ys.filter(r => String(col(r,'Month Name','월','month')) === MONTHS[idx]), label: MONTHS[idx] };
+}
+
+/* 비율 지표용 월별 평균 — 값이 없는 달은 0이 아니라 null (선이 0으로 곤두박질치지 않게) */
+function monthAvgOrNull(data, ...keys) {
+  const P = PERIODS();
+  const sum = new Array(P.length).fill(0), cnt = new Array(P.length).fill(0);
+  data.forEach(r => {
+    const i = P.indexOf(periodKeyOf(r));
+    if (i < 0) return;
+    const v = num(col(r, ...keys));
+    if (v) { sum[i] += v; cnt[i]++; }
+  });
+  return sum.map((v, i) => cnt[i] ? v / cnt[i] : null);
+}
+
+/* 연간(누적) 목표: 고정값이 설정돼 있으면 그 값, 없으면 엑셀 매출목표 누적 합계 */
+function annualTarget() {
+  if (ANNUAL_SALES_TARGET) return { val: ANNUAL_SALES_TARGET, label: '연간목표(설정값)' };
+  return { val: yearScopeData().reduce((s,r)=>s+num(col(r,'매출목표','Target','target')),0), label: '누적목표(엑셀)' };
+}
+
+/* ── 유틸: 차트 생성/업데이트 ── */
+function makeChart(id, type, labels, datasets, opts={}) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+
+  // 값이 전부 0/없음이면 차트를 그리지 않고 "데이터 없음"을 표시합니다.
+  // (0을 1로 치환해 실제 데이터가 없는데도 도넛이 꽉 찬 원으로 그려지던 문제 방지)
+  // 다만 1월~12월 월별 막대/선 차트는 데이터가 없어도 축(1월~12월)만 있는 빈 차트를 그대로 보여준다.
+  const grandTotal = datasets.reduce((s,ds)=>s+(ds.data||[]).reduce((a,v)=>a+Math.abs(Number(v)||0),0),0);
+  const isMonthly = JSON.stringify(labels) === JSON.stringify(MONTHS) && type !== 'doughnut' && type !== 'pie';
+  const wrap = ctx.parentElement;
+  let ph = wrap.querySelector('.chart-empty');
+  if (!grandTotal && !isMonthly) {
+    if (!ph) { ph = document.createElement('div'); ph.className = 'chart-empty'; wrap.appendChild(ph); }
+    ph.textContent = rawData.length ? '데이터 없음 (해당 항목 미수집)' : '엑셀을 업로드하세요';
+    ph.style.display = 'flex';
+    ctx.style.display = 'none';
+    return;
+  }
+  if (ph) ph.style.display = 'none';
+  ctx.style.display = '';
+  charts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: opts.legend ?? false, position: opts.legendPos ?? 'top', labels:{font:{size:10},boxWidth:10} },
+        valuePctLabels: { enabled: !!opts.dataLabels, mode: opts.dataLabelsMode || 'default', fmt: opts.dataLabelsFmt || 'num' }
+      },
+      scales: type === 'doughnut' || type === 'pie' ? {} : {
+        x: { ticks: { font:{size:10}, autoSkip: false } },
+        y: { ticks: { font:{size:10}, callback: v => Number(v).toLocaleString() }, beginAtZero: true, ...(opts.yMax ? {max: opts.yMax} : {}) }
+      },
+      ...opts.extra
+    }
+  });
+
+  // 월별/주별 차트는 막대/선을 더블클릭하면 그 기간만 필터링됩니다(다시 더블클릭하면 해제).
+  // - 리스너는 캔버스당 한 번만 등록하고(재렌더될 때마다 charts[id]를 새로 조회하므로 항상 최신 차트에 적용됨)
+  // - getElementsAtEventForMode를 'index' 모드로 써서 막대 위 정확한 픽셀이 아니라 그 기간 영역 어디를 눌러도 인식되게 함
+  // - 월별 보기일 땐 Month 필터를, 주별 보기일 땐 Week 필터를 토글한다(현재 viewMode 기준)
+  if (JSON.stringify(labels) === JSON.stringify(PERIODS()) && type !== 'doughnut' && type !== 'pie') {
+    ctx.style.cursor = 'pointer';
+    ctx.title = '더블클릭: 해당 기간만 보기 (다시 더블클릭하면 전체 보기로 복귀)';
+    if (!monthClickBound.has(id)) {
+      monthClickBound.add(id);
+      ctx.addEventListener('dblclick', evt => {
+        const ch = charts[id];
+        if (!ch) return;
+        const els = ch.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+        if (!els.length) return;
+        const period = PERIODS()[els[0].index];
+        if (!period) return;
+        const filterId = viewMode === 'week' ? 'f-week' : 'f-month';
+        const sel = document.getElementById(filterId);
+        sel.value = (sel.value === period) ? '' : period;   // 같은 기간 다시 더블클릭하면 필터 해제
+        if (filterId === 'f-month') updateWeekOptions();
+        applyFilters();
+      });
+    }
+  }
+}
+
+/* 값 컬럼을 여러 개 합산하는 groupBy (예: 매출액 + 제형별매출액) */
+function groupByMulti(data, keys, valKeys) {
+  const map = {};
+  data.forEach(r => {
+    let k = '';
+    for (const kk of (Array.isArray(keys)?keys:[keys])) { const v = String(col(r, kk) || '').trim(); if (v) { k = v; break; } }
+    if (!k) return;
+    let v = 0;
+    (Array.isArray(valKeys)?valKeys:[valKeys]).forEach(vk => { v += num(col(r, vk)); });
+    if (!v) return;
+    map[k] = (map[k] || 0) + v;
+  });
+  return map;
+}
+function monthTotalsMulti(data, valKeys) {
+  const P = PERIODS();
+  const arr = new Array(P.length).fill(0);
+  data.forEach(r => {
+    const idx = P.indexOf(periodKeyOf(r));
+    if (idx < 0) return;
+    (Array.isArray(valKeys)?valKeys:[valKeys]).forEach(vk => { arr[idx] += num(col(r, vk)); });
+  });
+  return arr;
+}
+/* 상위 N개만 남기고 나머지는 '기타'로 합쳐 라벨이 겹치지 않게 한다 */
+function topNWithOther(entries, n) {
+  const sorted = [...entries].sort((a,b)=>b[1]-a[1]);
+  if (sorted.length <= n) return sorted;
+  const head = sorted.slice(0, n);
+  const rest = sorted.slice(n).reduce((s,[,v])=>s+v, 0);
+  if (rest > 0) head.push([`기타 ${sorted.length-n}종`, rest]);
+  return head;
+}
+/* 거래처명에서 법인 표기를 떼어 축 라벨을 짧게 만든다 */
+function shortName(name) {
+  let t = String(name || '')
+    .replace(/\(주\)|\(株\)|㈜|주식회사|유한회사/g, '')
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) t = String(name || '').trim();
+  return t.length > 12 ? t.slice(0, 11) + '…' : t;
+}
+
+/* 라벨이 잘리지 않게 y축 여유를 준다 */
+function headroom(vals, mult) {
+  const m = Math.max(0, ...vals.map(v=>Number(v)||0));
+  return m ? m * (mult || 1.2) : undefined;
+}
+
+/* 값이 있는 행만 평균 (전체 행수로 나누던 임률 오류 수정) */
+function avgOf(data, ...keys) {
+  let sum = 0, cnt = 0;
+  data.forEach(r => { const v = num(col(r, ...keys)); if (v) { sum += v; cnt++; } });
+  return cnt ? sum / cnt : null;
+}
+
+function groupBy(data, key, valKey) {
+  const map = {};
+  data.forEach(r => {
+    const k = String(col(r, key) || '기타');
+    if (!map[k]) map[k] = 0;
+    map[k] += num(col(r, valKey));
+  });
+  return map;
+}
+
+function monthTotals(data, valKey) {
+  const P = PERIODS();
+  const arr = new Array(P.length).fill(0);
+  data.forEach(r => {
+    const idx = P.indexOf(periodKeyOf(r));
+    if (idx >= 0) arr[idx] += num(col(r, valKey));
+  });
+  return arr;
+}
+
+/* ── 전체 렌더 ── */
+function renderAll() {
+  renderOverview();
+  renderSales();
+  renderRnd();
+  renderMfg();
+  renderQuality();
+  renderMgmt();
+}
+
+/* 클레임구분 값별로 데이터셋을 자동 생성 (내부/외부 하드코딩 제거) */
+function claimDatasets(d) {
+  const kinds = [...new Set(d.map(r=>String(col(r,'클레임구분','ClaimType')||'').trim()).filter(Boolean))].sort();
+  if (!kinds.length) return [{label:'클레임건수',data:new Array(12).fill(0),backgroundColor:'#D85A30'}];
+  // 막대 하나에 쌓아서 보기 불편하다는 피드백으로 항목별 막대를 나눔(그룹형, stack 제거)
+  return kinds.map((k,i)=>({
+    label:k, borderRadius:3, backgroundColor:COLORS[(i+2)%COLORS.length],
+    data:monthTotals(d.filter(r=>String(col(r,'클레임구분','ClaimType')).trim()===k),'클레임건수')
+  }));
+}
+
+/* ── OVERVIEW ── */
+function renderOverview() {
+  const d = filteredData;
+  // 당월 목표/실적은 같은 기간(같은 달)에서 뽑아야 달성률이 맞습니다.
+  const ms = monthScope();
+  const target = ms.rows.reduce((s,r) => s + num(col(r,'매출목표','Target','target')), 0);
+  const actual = ms.rows.reduce((s,r) => s + num(col(r,'매출액','Sales','actual','매출실적')), 0);
+  const prev   = ms.rows.reduce((s,r) => s + num(col(r,'전년매출','PrevSales','prev')), 0);
+  const diff = actual - prev;
+  const rate = target ? (actual/target*100).toFixed(1) : '—';
+
+  // 누적 실적(선택된 달과 상관없이 지금까지 쌓인 매출 전체) — 당월 수치와 나란히 표시
+  const cumActual = yearScopeData().reduce((s,r) => s + num(col(r,'매출액','Sales','actual','매출실적')), 0);
+  const at = annualTarget();
+
+  setText('ov-target', target ? fmt(target) : '—');
+  setText('ov-actual', fmt(actual));
+  setText('ov-target-sub', ms.label + ' 목표');
+  setText('ov-actual-sub', ms.label + ' 실적');
+  // 전년매출 데이터가 없으면 증감을 계산할 수 없으므로 '—'로 표시 (실적 전액을 증가분으로 보이게 하던 문제)
+  setText('ov-diff', prev ? (diff >= 0 ? '+' : '') + fmt(diff) : '—');
+  setText('ov-diff-sub', prev ? '전년 대비' : '전년 데이터 없음');
+  setText('ov-rate', rate !== '—' ? rate + '%' : '—');
+  setText('ov-rate-sub', target ? ms.label + ' 목표 대비' : '목표 데이터 없음');
+  setText('ov-target-annual', at.val ? fmt(at.val) : '—');
+  setText('ov-target-annual-sub', at.label);
+  setText('ov-actual-cum', fmt(cumActual));
+  setClass('ov-diff-sub', prev ? (diff >= 0 ? 'k-sub up' : 'k-sub dn') : 'k-sub');
+  setClass('ov-rate-sub', parseFloat(rate) >= 100 ? 'k-sub up' : 'k-sub dn');
+
+  // 매출처별
+  const clientMap = groupBy(d, '거래처', '매출액');
+  const cEntries  = Object.entries(clientMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  makeChart('ch-ov-client','bar', cEntries.map(([k])=>k), [{label:'매출액', data:cEntries.map(([,v])=>v), backgroundColor:COLORS, borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(cEntries.map(([,v])=>v)), extra:{layout:{padding:{top:22}}}});
+
+  // 신제품 매출 (월별) — 연구소 집계값(신제품매출) 기준
+  makeChart('ch-ov-rnd','bar',PERIODS(),[
+    {label:'신제품매출',data:monthTotals(d,'신제품매출'),backgroundColor:'#533AB7',borderRadius:3},
+    {label:'신제품목표',data:monthTotals(d,'신제품목표'),type:'line',borderColor:'#D85A30',borderWidth:2,borderDash:[6,4],pointRadius:3,fill:false}
+  ],{legend:true,dataLabels:true,dataLabelsFmt:'won',yMax:headroom(monthTotals(d,'신제품매출')),extra:{layout:{padding:{top:22}}}});
+
+  // 완제품(포장) CAPA/생산수량 — '포장CAPA','포장생산수량' 컬럼 사용 (제조/믹싱 단계 수량인 'CAPA','생산수량'과는 다름)
+  makeChart('ch-ov-capa','bar',PERIODS(),[
+    {label:'완제품 생산수량',data:monthTotals(d,'포장생산수량'),backgroundColor:'#378ADD',borderRadius:3,order:2},
+    {label:'포장CAPA(상한)',data:monthTotals(d,'포장CAPA'),type:'line',borderColor:'#E8B84B',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,order:1}
+  ],{legend:true,dataLabels:true,dataLabelsFmt:'won',yMax:headroom(monthTotals(d,'포장CAPA'),1.15),extra:{layout:{padding:{top:20}}}});
+
+  // 재고 (재고수량 데이터가 없으면 위 makeChart의 '데이터 없음' 처리로 넘어감)
+  // 도넛형은 품목이 얼마나 있는지 한눈에 비교하기 어렵다는 피드백으로 막대형으로 변경.
+  // 그룹 기준 컬럼도 실제 데이터에 없는 '제품'이 아니라 'Product'로 수정 (그동안 전부 '기타'로만 잡히던 원인).
+  const stockMap = groupBy(d,'Product','재고수량');
+  const sE = Object.entries(stockMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  makeChart('ch-ov-stock','bar',sE.map(([k])=>k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, yMax: headroom(sE.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
+
+  // 클레임 / 컴플레인 (구분값을 데이터에서 그대로 사용)
+  makeChart('ch-ov-claim','bar',PERIODS(),claimDatasets(d),{legend:true,dataLabels:true,dataLabelsMode:'group',extra:{scales:{
+    x:{ticks:{font:{size:10},autoSkip:false}},y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+}
+
+/* ── SALES ── */
+function renderSales() {
+  const d = filteredData;
+  const ms = monthScope();
+  const target = ms.rows.reduce((s,r) => s + num(col(r,'매출목표','Target')), 0);
+  const actual = ms.rows.reduce((s,r) => s + num(col(r,'매출액','Sales','actual')), 0);
+  const prev   = ms.rows.reduce((s,r) => s + num(col(r,'전년매출','PrevSales')), 0);
+  const diff = actual - prev;
+  const rate = target ? (actual/target*100).toFixed(1)+'%' : '—';
+
+  // 누적 실적(선택된 달과 상관없이 지금까지 쌓인 매출 전체) — 당월 수치와 나란히 표시
+  const cumActual = yearScopeData().reduce((s,r) => s + num(col(r,'매출액','Sales','actual')), 0);
+  const at = annualTarget();
+
+  setText('sl-target', target ? fmt(target) : '—'); setText('sl-actual', fmt(actual));
+  setText('sl-target-sub', ms.label + ' 목표');
+  setText('sl-actual-sub', ms.label + ' 실적');
+  setText('sl-diff', prev ? (diff>=0?'+':'')+fmt(diff) : '—');
+  setText('sl-diff-sub', prev ? '전년 대비' : '전년 데이터 없음');
+  setText('sl-rate', rate);
+  setText('sl-rate-sub', target ? ms.label + ' 목표 대비' : '목표 데이터 없음');
+  setText('sl-target-annual', at.val ? fmt(at.val) : '—');
+  setText('sl-target-annual-sub', at.label);
+  setText('sl-actual-cum', fmt(cumActual));
+  setClass('sl-diff-sub', prev ? (diff>=0?'k-sub up':'k-sub dn') : 'k-sub');
+  setClass('sl-rate-sub', parseFloat(rate)>=100?'k-sub up':'k-sub dn');
+
+  // 매출액 목표/기준/신규 월별 (신규매출은 매출액에 이미 포함된 값이라, 누적 막대가 이중 합산되지 않도록
+  // 실적 막대는 '기존(=매출액-신규매출)' 분만 쌓고 그 위에 신규를 쌓아서 합계가 실제 매출액과 일치하게 함)
+  const slMonthlySales = monthTotals(d,'매출액');
+  const slMonthlyNew   = monthTotals(d,'신규매출');
+  const slMonthlyExisting = slMonthlySales.map((v,i)=>v - slMonthlyNew[i]);
+  makeChart('ch-sl-main','bar',PERIODS(),[
+    {label:'실적(기존)',data:slMonthlyExisting,backgroundColor:'#378ADD',stack:'s',order:2},
+    {label:'신규',data:slMonthlyNew,backgroundColor:'#1D9E75',stack:'s',order:2},
+    {label:'목표',data:monthTotals(d,'매출목표'),type:'line',borderColor:'#D85A30',backgroundColor:'#D85A30',borderWidth:2,borderDash:[6,4],pointRadius:4,pointBackgroundColor:'#D85A30',pointBorderColor:'#fff',tension:0.25,fill:false,order:1},
+    {label:'수주액',data:monthTotalsMulti(d,['수주액','수주금액']),type:'line',borderColor:'#639922',backgroundColor:'#639922',borderWidth:2,pointRadius:3,tension:0.25,fill:false,order:1},
+  ],{legend:true,dataLabels:true,dataLabelsMode:'stack',dataLabelsFmt:'won',extra:{layout:{padding:{top:22}},scales:{
+    x:{stacked:true,ticks:{font:{size:10},autoSkip:false}},
+    y:{stacked:true,ticks:{font:{size:10},callback:v=>(Number(v)/1e6).toLocaleString()},beginAtZero:true}
+  }}});
+
+  // 담당자별 (목표는 막대 위에 겹치는 선으로 표시)
+  const repMap = groupByMulti(d,['Sales Rep'],['매출액']);
+  const repTgt = groupByMulti(d,['Sales Rep'],['매출목표']);
+  const reps   = [...new Set([...Object.keys(repMap), ...Object.keys(repTgt)])].slice(0,6);
+  makeChart('ch-sl-rep','bar',reps,[
+    {label:'실적',data:reps.map(k=>repMap[k]||0),backgroundColor:'#378ADD',borderRadius:3,order:2},
+    {label:'목표',data:reps.map(k=>repTgt[k]||0),type:'line',borderColor:'#D85A30',backgroundColor:'#D85A30',borderWidth:2,borderDash:[6,4],pointRadius:4,pointBackgroundColor:'#D85A30',pointBorderColor:'#fff',tension:0.25,fill:false,order:1}
+  ],{legend:true,dataLabels:true,dataLabelsFmt:'won',yMax:headroom([...reps.map(k=>repMap[k]||0),...reps.map(k=>repTgt[k]||0)],1.15),extra:{layout:{padding:{top:22}}}});
+
+  // 매출구분별 (ODM/OEM/OTM) - 막대 위에 금액과 비중(%) 표시
+  const typeMap = groupBy(d,'매출구분','매출액');
+  const tE = Object.entries(typeMap).filter(([k])=>k && k!=='기타').sort((a,b)=>b[1]-a[1]);
+  makeChart('ch-sl-type','bar',tE.map(([k])=>k),[{label:'매출액',data:tE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(tE.map(([,v])=>v)), extra:{layout:{padding:{top:22}}}});
+
+  // 제형별 매출현황
+  const slFormMap = groupByMulti(d,'제형',['매출액','제형별매출액']);
+  const slFE = topNWithOther(Object.entries(slFormMap), 8);
+  makeChart('ch-sl-form','bar',slFE.map(([k])=>k),[{label:'매출액',data:slFE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(slFE.map(([,v])=>v)), extra:{layout:{padding:{top:22}}}});
+
+  // 충전(1차 포장)별 매출 현황 ('충전별매출액'이라는 전용 컬럼은 없어서 '매출액'을 그대로 사용 - 제형별 차트와 동일한 방식)
+  const newMap = groupByMulti(d,'충전타입',['매출액','충전별매출액']);
+  const nE = topNWithOther(Object.entries(newMap), 8);
+  makeChart('ch-sl-new','bar',nE.map(([k])=>k),[{label:'매출액',data:nE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(nE.map(([,v])=>v)), extra:{layout:{padding:{top:22}}}});
+
+  // 미수채권 (거래처별): 미수금액은 '누적'이 아니라 특정 시점의 잔액(스냅샷)이므로
+  // 여러 달치를 합산하면 안 됨(월마다 이월된 같은 잔액이 중복으로 더해짐).
+  // → 거래처별로 데이터가 있는 '가장 최근 달'의 잔액만 사용한다.
+  const arLatestByClient = {};  // 거래처 -> {month_idx, 미수금액}
+  d.forEach(r => {
+    const client = String(col(r,'거래처') || '').trim();
+    if (!client) return;
+    const amt = num(col(r,'미수금액'));
+    if (!amt && amt !== 0) return;
+    if (col(r,'미수금액') === '' || col(r,'미수금액') === undefined) return;
+    const mi = MONTHS.indexOf(String(col(r,'Month Name','월','month')));
+    if (mi < 0) return;
+    const cur = arLatestByClient[client];
+    if (!cur || mi >= cur.mi) arLatestByClient[client] = { mi, amt };
+  });
+  const arMap = {};
+  Object.entries(arLatestByClient).forEach(([k,v]) => { arMap[k] = v.amt; });
+  const arKeys  = Object.keys(arMap).sort((a,b)=>arMap[b]-arMap[a]).slice(0, 8);
+  const restArr = arKeys.map(k => Math.max(0, arMap[k]||0));
+  makeChart('ch-mg-ar','bar',arKeys.map(shortName),[
+    {label:'미상환 잔액',data:restArr,backgroundColor:'#A32D2D',borderRadius:3}
+  ],{dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'won',yMax:headroom(restArr),extra:{layout:{padding:{top:22}},scales:{
+    x:{ticks:{font:{size:10},autoSkip:false,maxRotation:35,minRotation:0}},
+    y:{beginAtZero:true,ticks:{font:{size:10},callback:v=>Number(v).toLocaleString()}}}}});
+
+  // 거래처 테이블
+  const clientMap = groupBy(d,'거래처','매출액');
+  const total = Object.values(clientMap).reduce((s,v)=>s+v,0);
+  const cEntries = Object.entries(clientMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  // 매출 '건수'는 매출액이 실제로 있는 행만 셉니다.
+  // (전체 행을 세면 개발의뢰 데이터까지 포함되어 건수가 크게 부풀려집니다)
+  const countMap = {};
+  d.forEach(r => {
+    if (num(col(r,'매출액','Sales','actual')) <= 0) return;
+    const c = col(r,'거래처'); countMap[c] = (countMap[c]||0) + 1;
+  });
+
+  // 거래처별 매출구분(ODM/OEM/OTM) 비중 집계 → 매출액이 가장 큰 유형을 대표 유형으로 표시
+  const typeByClient = {};
+  d.forEach(r => {
+    const c = col(r,'거래처');
+    const t = String(col(r,'매출구분')).trim();
+    if (!t || t === '기타') return;
+    if (!typeByClient[c]) typeByClient[c] = {};
+    typeByClient[c][t] = (typeByClient[c][t] || 0) + num(col(r,'매출액'));
+  });
+  const TYPE_STYLE = {
+    'OEM': { bg:'#E6F1FB', fg:'#185FA5' },
+    'ODM': { bg:'#E1F5EE', fg:'#0F6E56' },
+    'OTM': { bg:'#FAEEDA', fg:'#854F0B' },
+  };
+  function typeBadge(c) {
+    const m = typeByClient[c];
+    if (!m) return '<span style="color:#bbb;">-</span>';
+    const [t] = Object.entries(m).sort((a,b)=>b[1]-a[1])[0];
+    const st = TYPE_STYLE[t] || { bg:'#f0f0f0', fg:'#555' };
+    return `<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:99px;background:${st.bg};color:${st.fg};">${t}</span>`;
+  }
+
+  document.getElementById('sl-client-body').innerHTML = cEntries.length
+    ? cEntries.map(([c,v]) => `<tr><td>${c}</td><td>${typeBadge(c)}</td><td>${v.toLocaleString()}</td><td>${countMap[c]||0}건</td><td>${total?(v/total*100).toFixed(1):0}%</td></tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:#bbb;padding:16px;">데이터 없음</td></tr>';
+}
+
+/* ── R&D ── */
+function renderRnd() {
+  const d = filteredData;
+  const rndFilter = r => String(col(r,'카테고리','Category')).includes('R&D') || String(col(r,'구분','type')).includes('R&D') || String(col(r,'신제품','NewProd')) === '1';
+  const rd = d.filter(rndFilter);
+  // 신제품 매출/목표 전용 컬럼이 있으면 그 값을 사용 (카테고리 R&D 필터는 거의 전 행에 걸려 의미가 없었음)
+  const ms = monthScope();
+  const npActual = ms.rows.reduce((s,r)=>s+num(col(r,'신제품매출')),0);
+  const npTarget = ms.rows.reduce((s,r)=>s+num(col(r,'신제품목표')),0);
+  const target = npTarget;
+  const actual = npActual;
+  const prev   = ms.rows.reduce((s,r)=>s+num(col(r,'전년매출','PrevSales')),0);
+  const rate = target ? (actual/target*100).toFixed(1)+'%' : '—';
+  setText('rd-target',target?fmt(target):'—'); setText('rd-actual',actual?fmt(actual):'—');
+  setText('rd-diff',prev?((actual-prev>=0?'+':'')+fmt(actual-prev)):'—'); setText('rd-rate',rate);
+
+  // 매출현황 (월별)
+  makeChart('ch-rd-main','bar',PERIODS(),[
+    {label:'신제품매출',data:monthTotals(d,'신제품매출'),backgroundColor:'#533AB7',borderRadius:3},
+    {label:'신제품목표',data:monthTotals(d,'신제품목표'),type:'line',borderColor:'#D85A30',borderWidth:2,borderDash:[6,4],pointRadius:3,fill:false}
+  ],{legend:true,dataLabels:true,dataLabelsFmt:'won',yMax:headroom(monthTotals(d,'신제품매출')),extra:{layout:{padding:{top:22}}}});
+
+  // 견본제안/Fix율
+  makeChart('ch-rd-fix','bar',PERIODS(),[
+    {label:'견본제안건수',data:monthTotals(d,'견본제안건수'),backgroundColor:'#E8B84B',borderRadius:3},
+    {label:'Fix건수',data:monthTotals(d,'Fix건수'),type:'line',borderColor:'#1D9E75',borderWidth:2,pointRadius:4,fill:false}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',yMax:headroom(monthTotals(d,'견본제안건수'),1.3),extra:{layout:{padding:{top:38}}}});
+
+  // 제형별
+  const formMap = groupByMulti(d,'제형',['매출액','제형별매출액']);
+  const fE = topNWithOther(Object.entries(formMap), 8);
+  makeChart('ch-rd-form','bar',fE.map(([k])=>k),[{label:'매출액',data:fE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(fE.map(([,v])=>v)), extra:{layout:{padding:{top:22}}}});
+
+  // 신제품 진행현황 테이블 (연구원 담당자별: 건수 / 평균 리드타임 / 완료율)
+  // 담당자 컬럼은 영업담당자 등 다른 데이터에서도 재사용되고 있어서,
+  // 이름으로 거르지 않고 카테고리가 'R&D'인 행만 R&D 개발의뢰로 집계한다.
+  const rdProdRows = d.filter(r => String(col(r,'카테고리','Category')).trim() === 'R&D');
+  const byRep = {};
+  rdProdRows.forEach(r => {
+    const rep = String(col(r,'담당자','R&D담당자','신제품담당자','Rep') || '').trim();
+    if (!rep) return;
+    if (!byRep[rep]) byRep[rep] = { cnt:0, leadSum:0, leadCnt:0, doneCnt:0 };
+    byRep[rep].cnt++;
+    const leadRaw = col(r,'리드타임','LeadTime');
+    if (leadRaw !== '' && leadRaw !== undefined) { byRep[rep].leadSum += num(leadRaw); byRep[rep].leadCnt++; }
+    const status = String(col(r,'상태','Status','진행상태','status'));
+    if (status.includes('완료') || status.toLowerCase().includes('done')) byRep[rep].doneCnt++;
+  });
+  const repEntries = Object.entries(byRep).sort((a,b)=>b[1].cnt-a[1].cnt);
+  document.getElementById('rd-prod-body').innerHTML = repEntries.length
+    ? repEntries.map(([rep,v]) => `<tr><td>${rep}</td><td>${v.cnt}건</td><td>${v.leadCnt?(v.leadSum/v.leadCnt).toFixed(1):'—'}일</td><td>${v.cnt?(v.doneCnt/v.cnt*100).toFixed(1):0}%</td></tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:#bbb;padding:16px;">데이터 없음</td></tr>';
+
+  const rdWorkChart = (id, key, color) => {
+    const vals = monthTotals(d, key);
+    makeChart(id,'bar',PERIODS(),[{label:key,data:vals,backgroundColor:color,borderRadius:3}],
+      {dataLabels:true, yMax: headroom(vals), extra:{layout:{padding:{top:20}},scales:{
+        x:{ticks:{font:{size:9},autoSkip:true,maxRotation:0,minRotation:0}}
+      }}});
+  };
+  rdWorkChart('ch-rd-ct','CT건수','#378ADD');
+  rdWorkChart('ch-rd-ingr','전성분발송건수','#1D9E75');
+  rdWorkChart('ch-rd-copy','문안검수건수','#E8B84B');
+  rdWorkChart('ch-rd-price','단가검수건수','#533AB7');
+  rdWorkChart('ch-rd-export','수출서류건수','#D4537E');
+}
+
+/* ── MANUFACTURING ── */
+function renderMfg() {
+  const d = filteredData;
+  // 지표마다 수집 시점이 달라 각각 "값이 있는 마지막 달"을 기준으로 표시한다
+  const qs2 = latestScope(['생산수량','ProdQty']);
+  const as2 = latestScope(['생산금액','포장금액']);
+  const rs2 = latestScope(['계획달성률']);
+  const ws2 = latestScope(['임률','WageRate']);
+  const qty  = qs2.rows.reduce((s,r)=>s+num(col(r,'생산수량','ProdQty')),0);
+  const amt  = as2.rows.reduce((s,r)=>s+num(col(r,'생산금액','ProdAmt'))+num(col(r,'포장금액')),0);
+  // 계획달성률이 자료에 직접 있으면 그 값을 사용 (단위가 다른 계획/실적을 나누던 문제 해결)
+  const rateCol = avgOf(rs2.rows,'계획달성률');
+  const rate = rateCol !== null ? rateCol.toFixed(1)+'%' : '—';
+  const wage = avgOf(ws2.rows,'임률','WageRate');
+  // 데이터가 없는 항목은 0 대신 '—'로 표시 (0을 실측값으로 오해하지 않도록)
+  setText('mf-qty', qty ? qty.toLocaleString(undefined,{maximumFractionDigits:1})+'Ton' : '—');
+  setText('mf-qty-sub', qty ? qs2.label+' 생산량' : '데이터 없음');
+  setText('mf-amt-sub', amt ? as2.label+' 생산·포장금액' : '데이터 없음');
+  setText('mf-rate-sub', rateCol !== null ? rs2.label+' 계획달성률' : '데이터 없음');
+  setText('mf-wage-sub', wage ? ws2.label+' 임률' : '데이터 없음');
+  setText('mf-amt', amt ? fmt(amt) : '—');
+  setText('mf-rate', rate); setText('mf-wage', wage ? Math.round(wage).toLocaleString()+'원' : '—');
+
+  makeChart('ch-mf-capa','bar',PERIODS(),[
+    {label:'완제품 생산수량(EA)',data:monthTotals(d,'포장생산수량'),backgroundColor:'#378ADD',borderRadius:3,order:2},
+    {label:'포장CAPA(상한)',data:monthTotals(d,'포장CAPA'),type:'line',borderColor:'#E8B84B',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,order:1}
+  ],{legend:true,dataLabels:true,dataLabelsFmt:'won',yMax:headroom(monthTotals(d,'포장CAPA'),1.15),extra:{layout:{padding:{top:20}}}});
+
+  const lineMap = groupByMulti(d,['라인'],['포장생산수량']);
+  const lE = Object.entries(lineMap).sort((a,b)=>b[1]-a[1]);
+  makeChart('ch-mf-pkg','bar',lE.map(([k])=>k),[{label:'포장생산',data:lE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, yMax: headroom(lE.map(([,v])=>v)), extra:{layout:{padding:{top:22}}}});
+
+  makeChart('ch-mf-prod','bar',PERIODS(),[
+    {label:'제조량(KG)',data:monthTotals(d,'제조량'),backgroundColor:'#378ADD',borderRadius:3,yAxisID:'y'},
+    {label:'Batch',data:monthTotalsMulti(d,['제조Batch']),type:'line',borderColor:'#D85A30',borderWidth:2,pointRadius:3,fill:false,yAxisID:'y1',noLabel:true}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:38}},scales:{
+    x:{ticks:{font:{size:10},autoSkip:false}},
+    y:{position:'left',beginAtZero:true,ticks:{font:{size:10},callback:v=>Number(v).toLocaleString()}},
+    y1:{position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{font:{size:10},precision:0}}
+  }}});
+
+  const stockMap = groupBy(d,'Product','재고수량');
+  const sE = Object.entries(stockMap).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  makeChart('ch-mf-stock','bar',sE.map(([k])=>k),[{label:'재고수량',data:sE.map(([,v])=>v),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, yMax: headroom(sE.map(([,v])=>v)), extra:{layout:{padding:{top:22}},scales:{x:{ticks:{font:{size:9},autoSkip:false,maxRotation:30,minRotation:0}}}}});
+
+  // 적기대응률 / 납기준수율 (자료가 없는 달은 선을 끊어서 표시)
+  makeChart('ch-mg-delivery','line',PERIODS(),[
+    {label:'적기대응률',data:monthAvgOrNull(d,'적기대응률'),borderColor:'#378ADD',backgroundColor:'rgba(55,138,221,0.08)',fill:true,tension:0.3,pointRadius:4,spanGaps:false},
+    {label:'납기준수율',data:monthAvgOrNull(d,'납기준수율'),borderColor:'#1D9E75',backgroundColor:'transparent',tension:0.3,pointRadius:4,spanGaps:false}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',dataLabelsFmt:'pct',extra:{layout:{padding:{top:18}},scales:{y:{max:120,ticks:{callback:v=>v+'%',font:{size:10}},beginAtZero:true},x:{ticks:{font:{size:10}}}}}});
+
+  // 창고 로케이션별 CAPA 현황 표 - 이전 '설비별 가동률/수율' 차트는 대응하는 수집 데이터가 아예 없어
+  // 계속 빈 차트였음 -> 창고 로케이션 데이터(구역별 총/현재/잔여 CAPA)로 교체.
+  // 막대그래프의 가동률(%)만 보여주는 방식 대신, 원본 표(총CAPA/현CAPA/잔여CAPA)와 같은 형태로
+  // 깔끔하게 보여주면서 잔여율(%)을 같이 표시 - "용적률 몇% 남았는지" 바로 확인 가능하게.
+  const locTotal = groupByMulti(d,['창고구역'],['로케이션총CAPA']);
+  const locCur   = groupByMulti(d,['창고구역'],['로케이션현재CAPA']);
+  const locRem   = groupByMulti(d,['창고구역'],['로케이션잔여CAPA']);
+  const locKeys  = Object.keys(locTotal).sort();
+  if (locKeys.length) {
+    const rowsHtml = locKeys.map(k => {
+      const tot = locTotal[k] || 0, cur = locCur[k] || 0, rem = locRem[k] || 0;
+      const useRate = tot ? (cur / tot * 100).toFixed(1) : '0.0';
+      const remRate = tot ? (rem / tot * 100).toFixed(1) : '0.0';
+      return `<tr><td>${k}</td><td>${tot.toLocaleString()}</td><td>${cur.toLocaleString()}</td><td>${rem.toLocaleString()}</td><td>${useRate}%</td><td>${remRate}%</td></tr>`;
+    }).join('');
+    // 합계(전체 구역 통합) 행 - 전체 창고 기준 몇% 사용 중인지 한눈에 보이게
+    const totSum = locKeys.reduce((s,k)=>s+(locTotal[k]||0),0);
+    const curSum = locKeys.reduce((s,k)=>s+(locCur[k]||0),0);
+    const remSum = locKeys.reduce((s,k)=>s+(locRem[k]||0),0);
+    const useSumRate = totSum ? (curSum/totSum*100).toFixed(1) : '0.0';
+    const remSumRate = totSum ? (remSum/totSum*100).toFixed(1) : '0.0';
+    const totalRow = `<tr style="font-weight:700;background:#f7f7f5;"><td>합계</td><td>${totSum.toLocaleString()}</td><td>${curSum.toLocaleString()}</td><td>${remSum.toLocaleString()}</td><td>${useSumRate}%</td><td>${remSumRate}%</td></tr>`;
+    document.getElementById('loc-capa-body').innerHTML = rowsHtml + totalRow;
+  } else {
+    document.getElementById('loc-capa-body').innerHTML = '<tr><td colspan="6" class="no-data">데이터 없음</td></tr>';
+  }
+}
+
+/* ── QUALITY ── */
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* 클레임 사유 상세는 별도 클릭 로직 없이, 상단 Month Name 필터 상태를 그대로 따라간다.
+   (더블클릭으로 특정 월이 강조되면 필터가 그 월로 바뀌므로 자동으로 열리고,
+    다시 더블클릭해서 전체 보기로 돌아가면 필터가 비워지므로 자동으로 닫힌다.) */
+function syncClaimDetailWithFilter() {
+  const month = document.getElementById('f-month').value;
+  const wrap = document.getElementById('ql-claim-detail-wrap');
+  if (!month) { wrap.hidden = true; return; }
+
+  const rows = filteredData.filter(r => num(col(r,'클레임건수','ClaimCnt')) > 0);
+  const tbl = document.getElementById('ql-claim-detail-table');
+  document.getElementById('ql-claim-detail-month').textContent = `(${month}, ${rows.length}건)`;
+
+  if (!rows.length) {
+    tbl.innerHTML = '<div class="no-data">해당 월 클레임 상세 데이터가 없습니다.</div>';
+  } else {
+    const defectType = r => {
+      const parts = [];
+      if (num(col(r,'원불량'))) parts.push('원(벌크)불량');
+      if (num(col(r,'작업불량'))) parts.push('작업불량');
+      if (num(col(r,'기타불량'))) parts.push('기타(이물 등)');
+      return parts.join(', ') || '—';
+    };
+    const trs = rows.map(r => `<tr>
+      <td>${esc(col(r,'거래처') || '—')}</td>
+      <td>${esc(col(r,'Product') || '—')}</td>
+      <td>${esc(col(r,'클레임구분','ClaimType') || '—')}</td>
+      <td>${esc(defectType(r))}</td>
+      <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
+      <td>${esc(col(r,'상태','status') || '—')}</td>
+      <td style="color:#aaa;">${esc(col(r,'데이터출처') || '—')}</td>
+    </tr>`).join('');
+    tbl.innerHTML = `<table><thead><tr>
+      <th>거래처</th><th>제품/내용</th><th>구분</th><th>불량유형</th><th>조치방안</th><th>상태</th><th>출처</th>
+    </tr></thead><tbody>${trs}</tbody></table>`;
+  }
+  wrap.hidden = false;
+}
+
+function renderQuality() {
+  const d = filteredData;
+  const qs = latestScope(['클레임건수','불량건수','검사수량','공정불량률']);
+  const claimCnt = d.reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
+  const claimAmt = d.reduce((s,r)=>s+num(col(r,'클레임금액','ClaimAmt')),0);
+  const defect   = d.reduce((s,r)=>s+num(col(r,'불량건수','DefectCnt')),0);
+  // 클레임률 = 불량수량 / 검사수량 (품질 KPI 산식). 생산수량(Ton)으로 나누던 계산 제거
+  const inspected = d.reduce((s,r)=>s+num(col(r,'검사수량')),0);
+  const claimRate = inspected ? (defect/inspected*100).toFixed(2)+'%' : '—';
+  const dr = avgOf(d,'공정불량률');
+  const defectRate = dr !== null ? dr.toFixed(2)+'%' : '—';
+  setText('ql-rate', claimRate); setText('ql-cnt', claimCnt ? claimCnt.toLocaleString()+'건' : '—');
+  setText('ql-cnt-sub', claimCnt ? '누적 클레임·컴플레인' : '데이터 없음');
+  setText('ql-rate-sub', inspected ? '불량 '+defect.toLocaleString()+'ea / 검사 '+inspected.toLocaleString()+'ea' : '데이터 없음');
+  setText('ql-defect-sub', dr !== null ? qs.label+' 공정 불량률' : '데이터 없음');
+  setText('ql-amt', claimAmt ? fmt(claimAmt) : '—'); setText('ql-defect', defectRate);
+
+  makeChart('ch-ql-claim','bar',PERIODS(),claimDatasets(d),{legend:true,dataLabels:true,dataLabelsMode:'group',extra:{scales:{
+    x:{ticks:{font:{size:10},autoSkip:false}},
+    y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+  syncClaimDetailWithFilter();
+
+  makeChart('ch-ql-defect','bar',PERIODS(),[
+    {label:'원(벌크)불량',data:monthTotals(d,'원불량'),backgroundColor:'#D85A30',borderRadius:3,stack:'q'},
+    {label:'작업불량',data:monthTotals(d,'작업불량'),backgroundColor:'#E8B84B',borderRadius:3,stack:'q'},
+    {label:'기타(이물 등)',data:monthTotals(d,'기타불량'),backgroundColor:'#BA7517',borderRadius:3,stack:'q'}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'stack',extra:{scales:{
+    x:{stacked:true,ticks:{font:{size:10},autoSkip:false}},
+    y:{stacked:true,beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+
+  const inspChart = (id, key, color) => {
+    const vals = monthTotals(d, key);
+    makeChart(id,'bar',PERIODS(),[{label:key,data:vals,backgroundColor:color,borderRadius:3}],
+      {dataLabels:true, yMax: headroom(vals), extra:{layout:{padding:{top:20}}}});
+  };
+  inspChart('ch-ql-raw','원료검사건수','#378ADD');
+  inspChart('ch-ql-bulk','벌크검사건수','#378ADD');
+  inspChart('ch-ql-pkgmat','포장재검사건수','#378ADD');
+  inspChart('ch-ql-proc','공정검사건수','#378ADD');
+  inspChart('ch-ql-fg','완제품검사건수','#1D9E75');
+  inspChart('ch-ql-micro','미생물검사건수','#1D9E75');
+  inspChart('ch-ql-analysis','분석검사건수','#1D9E75');
+  inspChart('ch-ql-ship','출하검사건수','#1D9E75');
+}
+
+/* ── MANAGEMENT ── */
+function renderMgmt() {
+  const d = filteredData;
+  const ms = monthScope();
+  const bs = latestScope(['매입금액','BuyAmt']);
+  const ls = latestScope(['물류금액','LogiAmt']);
+  const hs = latestScope(['현인원','HeadCount']);
+  const buyAmt  = bs.rows.reduce((s,r)=>s+num(col(r,'매입금액','BuyAmt')),0);
+  const logiAmt = ls.rows.reduce((s,r)=>s+num(col(r,'물류금액','LogiAmt')),0);
+  const hc      = hs.rows.reduce((s,r)=>s+num(col(r,'현인원','HeadCount')),0);
+  const resign  = hs.rows.reduce((s,r)=>s+num(col(r,'퇴사자','Resign')),0);
+  const prevHc  = hs.rows.reduce((s,r)=>s+num(col(r,'직전인원','PrevHeadCount')),0);
+  // 퇴사율은 기초(직전) 인원 대비로 계산. 직전인원이 없을 때만 현인원으로 대체.
+  const base = prevHc || hc;
+  const turnRate = base ? (resign/base*100).toFixed(1)+'%' : '—';
+  setText('mg-buy', buyAmt ? fmt(buyAmt) : '—'); setText('mg-logi', logiAmt ? fmt(logiAmt) : '—');
+  setText('mg-buy-sub', buyAmt ? bs.label+' 매입' : '데이터 없음');
+  setText('mg-logi-sub', logiAmt ? ls.label+' 물류비' : '데이터 없음');
+  setText('mg-hc', hc ? hc+'명' : '—'); setText('mg-turn', turnRate);
+  setText('mg-hc-sub', hc ? `${hs.label} 현인원 (입사 ${hs.rows.reduce((s,r)=>s+num(col(r,'입사자')),0)} / 퇴사 ${resign})` : '데이터 없음');
+  setText('mg-turn-sub', base ? `${hs.label} 퇴사 ${resign}명 / ${prevHc?'직전':'현'}인원 ${base}명` : '퇴사율');
+
+  // 막대 하나에 원료+부자재+기타가 다 쌓여서 보기 불편하다는 피드백 반영 - 항목별로 막대를 나눔(그룹형)
+  makeChart('ch-mg-material','bar',PERIODS(),[
+    {label:'원료',data:monthTotals(d.filter(r=>String(col(r,'매입구분')).includes('원료')),'매입금액'),backgroundColor:'#E8B84B'},
+    {label:'부자재',data:monthTotals(d.filter(r=>String(col(r,'매입구분')).includes('부자재')),'매입금액'),backgroundColor:'#533AB7'},
+    {label:'기타',data:monthTotals(d.filter(r=>String(col(r,'매입구분')).trim()==='기타'),'매입금액'),backgroundColor:'#A32D2D'}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'group',dataLabelsFmt:'won',extra:{layout:{padding:{top:22}},scales:{
+    x:{ticks:{font:{size:10},autoSkip:false}},
+    y:{beginAtZero:true,ticks:{font:{size:10},callback:v=>Number(v).toLocaleString()}}}}});
+
+  // 물류금액은 연도 경계를 넘는 데이터(예: 작년 12월)가 섞여 있을 수 있어, 월별 추이 차트는
+  // 연도 필터가 따로 선택되지 않았을 때 데이터상 가장 최근 연도만 기준으로 그린다
+  // (그렇지 않으면 작년 12월과 올해 데이터가 같은 '12월' 막대에 겹쳐 보이게 됨).
+  const logiYears = d.map(r=>Number(col(r,'Year'))||0).filter(Boolean);
+  const logiLatestYear = logiYears.length ? Math.max(...logiYears) : null;
+  const dLogi = (document.getElementById('f-year').value || !logiLatestYear) ? d : d.filter(r=>Number(col(r,'Year'))===logiLatestYear);
+  makeChart('ch-mg-logistics','bar',PERIODS(),[{label:'물류비용',data:monthTotals(dLogi,'물류금액'),backgroundColor:'#D85A30',borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(monthTotals(dLogi,'물류금액')), extra:{layout:{padding:{top:22}}}});
+
+  // 차종별 물류비
+  const carMap = groupByMulti(d,['차종'],['물류금액']);
+  const carKeys = Object.keys(carMap).sort((a,b)=>carMap[b]-carMap[a]);
+  makeChart('ch-mg-car','bar',carKeys,[{label:'물류비',data:carKeys.map(k=>carMap[k]),backgroundColor:COLORS,borderRadius:3}],
+    {dataLabels:true, dataLabelsFmt:'won', yMax: headroom(carKeys.map(k=>carMap[k])), extra:{layout:{padding:{top:22}}}});
+
+  // 월별 인원 현황 (현인원 막대 + 입사/퇴사)
+  makeChart('ch-mg-hr','bar',PERIODS(),[
+    {label:'현인원',data:monthTotals(d,'현인원'),backgroundColor:'#378ADD',borderRadius:3},
+    {label:'입사',data:monthTotals(d,'입사자'),backgroundColor:'#1D9E75',borderRadius:3},
+    {label:'퇴사',data:monthTotals(d,'퇴사자'),backgroundColor:'#D85A30',borderRadius:3}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:18}},scales:{
+    x:{ticks:{font:{size:10},autoSkip:false}},
+    y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+}
+
+/* ── 유틸 ── */
+function fmt(v) { return v ? '₩'+Math.round(v).toLocaleString() : '₩0'; }
+function setText(id, v) { const el=document.getElementById(id); if(el) el.textContent=v; }
+function setClass(id, cls) { const el=document.getElementById(id); if(el) el.className=cls; }
+
+// 초기 렌더 (빈 상태)
+renderAll();
+
+// 구글시트 자동 로드: 열 때 1회 + 5분마다 재시도(창을 계속 켜두면 최신화됨)
+loadFromGoogleSheet(false);
+setInterval(() => loadFromGoogleSheet(true), 5 * 60 * 1000);
+</script>
+</body>
+</html>
