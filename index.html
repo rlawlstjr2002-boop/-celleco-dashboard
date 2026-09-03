@@ -922,8 +922,8 @@ function renderStockOverviewChart(d, canvasId) {
   const stockCats4 = [['완제품재고','완제품'],['벌크재고','벌크'],['부자재재고','부자재'],['원료재고','원료']];
   const catNormalPct = [], catAgedPct = [];
   stockCats4.forEach(([cat]) => {
-    const n = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-일반').length;
-    const a = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-장기').length;
+    const n = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-일반').reduce((s,r)=>s+num(col(r,'재고수량')),0);
+    const a = d.filter(r=>String(col(r,'카테고리','Category')).trim()===cat+'-장기').reduce((s,r)=>s+num(col(r,'재고수량')),0);
     const total = n+a;
     catNormalPct.push(total ? n/total*100 : 0);
     catAgedPct.push(total ? a/total*100 : 0);
@@ -1273,8 +1273,8 @@ function renderMfg() {
     const normalRows = d.filter(r => String(col(r,'카테고리','Category')).trim() === baseCat + '-일반');
     const agedRows   = d.filter(r => String(col(r,'카테고리','Category')).trim() === baseCat + '-장기');
     makeChart(canvasId,'bar',PERIODS(),[
-      {label:'일반재고',data:monthCounts(normalRows),backgroundColor:'#378ADD',borderRadius:3},
-      {label:'장기재고(6개월+)',data:monthCounts(agedRows),backgroundColor:'#D85A30',borderRadius:3}
+      {label:'일반재고',data:monthTotals(normalRows,'재고수량'),backgroundColor:'#378ADD',borderRadius:3},
+      {label:'장기재고(6개월+)',data:monthTotals(agedRows,'재고수량'),backgroundColor:'#D85A30',borderRadius:3}
     ],{legend:true,dataLabels:true,dataLabelsMode:'group',extra:{scales:{
       x:{ticks:{font:{size:10},autoSkip:false}},
       y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
