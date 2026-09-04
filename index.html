@@ -1345,10 +1345,9 @@ function syncClaimDetailWithFilter() {
       <td>${esc(defectType(r))}</td>
       <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
       <td>${esc(col(r,'상태','status') || '—')}</td>
-      <td style="color:#aaa;">${esc(col(r,'데이터출처') || '—')}</td>
     </tr>`).join('');
     tbl.innerHTML = `<table><thead><tr>
-      <th>거래처</th><th>제품/내용</th><th>구분</th><th>불량유형</th><th>조치방안</th><th>상태</th><th>출처</th>
+      <th>거래처</th><th>제품/내용</th><th>구분</th><th>불량유형</th><th>조치방안</th><th>상태</th>
     </tr></thead><tbody>${trs}</tbody></table>`;
   }
   wrap.hidden = false;
