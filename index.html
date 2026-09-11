@@ -1336,12 +1336,11 @@ function syncClaimDetailWithFilter() {
       <td>${esc(col(r,'Status','status') || '—')}</td>
       <td>${esc(col(r,'Product') || '—')}</td>
       <td>${esc(col(r,'클레임구분','ClaimType') || '—')}</td>
-      <td>${esc(col(r,'Performance Flag') || '—')}</td>
       <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
       <td>${esc(col(r,'상태','status') || '—')}</td>
     </tr>`).join('');
     tbl.innerHTML = `<table><thead><tr>
-      <th>거래처</th><th>제품명</th><th>내용</th><th>구분</th><th>불량유형</th><th>조치방안</th><th>상태</th>
+      <th>거래처</th><th>제품명</th><th>내용</th><th>구분</th><th>조치방안</th><th>상태</th>
     </tr></thead><tbody>${trs}</tbody></table>`;
   }
   wrap.hidden = false;
