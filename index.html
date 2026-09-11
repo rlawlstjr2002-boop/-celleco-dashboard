@@ -1331,23 +1331,17 @@ function syncClaimDetailWithFilter() {
   if (!rows.length) {
     tbl.innerHTML = '<div class="no-data">해당 월 클레임 상세 데이터가 없습니다.</div>';
   } else {
-    const defectType = r => {
-      const parts = [];
-      if (num(col(r,'원불량'))) parts.push('원(벌크)불량');
-      if (num(col(r,'작업불량'))) parts.push('작업불량');
-      if (num(col(r,'기타불량'))) parts.push('기타(이물 등)');
-      return parts.join(', ') || '—';
-    };
     const trs = rows.map(r => `<tr>
       <td>${esc(col(r,'거래처') || '—')}</td>
+      <td>${esc(col(r,'Status','status') || '—')}</td>
       <td>${esc(col(r,'Product') || '—')}</td>
       <td>${esc(col(r,'클레임구분','ClaimType') || '—')}</td>
-      <td>${esc(defectType(r))}</td>
+      <td>${esc(col(r,'Performance Flag') || '—')}</td>
       <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
       <td>${esc(col(r,'상태','status') || '—')}</td>
     </tr>`).join('');
     tbl.innerHTML = `<table><thead><tr>
-      <th>거래처</th><th>제품/내용</th><th>구분</th><th>불량유형</th><th>조치방안</th><th>상태</th>
+      <th>거래처</th><th>제품명</th><th>내용</th><th>구분</th><th>불량유형</th><th>조치방안</th><th>상태</th>
     </tr></thead><tbody>${trs}</tbody></table>`;
   }
   wrap.hidden = false;
