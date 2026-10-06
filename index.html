@@ -1333,8 +1333,8 @@ function syncClaimDetailWithFilter() {
   } else {
     const trs = rows.map(r => `<tr>
       <td>${esc(col(r,'거래처') || '—')}</td>
-      <td>${esc(col(r,'Status','status') || '—')}</td>
-      <td>${esc(col(r,'Product') || '—')}</td>
+      <td>${esc(col(r,'Product','제품명') || '—')}</td>
+      <td>${esc(col(r,'클레임내용','내용') || '—')}</td>
       <td>${esc(col(r,'클레임구분','ClaimType') || '—')}</td>
       <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
       <td>${esc(col(r,'상태','status') || '—')}</td>
