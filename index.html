@@ -1319,6 +1319,29 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 /* 클레임 사유 상세는 별도 클릭 로직 없이, 상단 Month Name 필터 상태를 그대로 따라간다.
    (더블클릭으로 특정 월이 강조되면 필터가 그 월로 바뀌므로 자동으로 열리고,
     다시 더블클릭해서 전체 보기로 돌아가면 필터가 비워지므로 자동으로 닫힌다.) */
+/* 클레임 상세 표의 거래처/제품명/내용을 데이터 양식에 맞춰 꺼낸다.
+   1) 정리된 양식: 거래처=업체, Product=제품명, 클레임내용=내용
+   2) 품질팀 주간보고 원본 양식: 거래처='업체/제품', Product=내용 → '/' 기준으로 업체/제품을 나눔
+      ('/'가 없으면 브랜드명으로 업체를 추정, 모르면 제품명 전체를 그대로 표시)
+   3) 불만 접수 대장 양식: 거래처=업체, Product=제품명 (내용 없음) */
+const CLAIM_BRAND_CLIENT = {'블랑네이처':'에이텍','파임':'해피타임','로벡틴':'알엘에이피','닥터멜락신':'코스메카','루틸코리아':'루틸코리아','해피타임':'해피타임'};
+function claimCells(r) {
+  const client = String(col(r,'거래처') || '').replace(/\s+/g,' ').trim();
+  const prod   = String(col(r,'Product','제품명') || '').trim();
+  const content= String(col(r,'클레임내용','내용') || '').trim();
+  if (content) return { client, product: prod, content };
+  const src = String(col(r,'데이터출처') || '');
+  if (src.startsWith('품질과학연구소')) {
+    const i = client.indexOf('/');
+    if (i >= 0) return { client: client.slice(0,i).trim(), product: client.slice(i+1).trim(), content: prod };
+    const b = Object.keys(CLAIM_BRAND_CLIENT).find(k => client.startsWith(k));
+    const cl = b ? CLAIM_BRAND_CLIENT[b] : '';
+    const pr = (b && client.startsWith(cl)) ? client.slice(cl.length).trim() : client;
+    return { client: cl, product: pr, content: prod };
+  }
+  return { client, product: prod, content: '' };
+}
+
 function syncClaimDetailWithFilter() {
   const month = document.getElementById('f-month').value;
   const wrap = document.getElementById('ql-claim-detail-wrap');
@@ -1331,14 +1354,14 @@ function syncClaimDetailWithFilter() {
   if (!rows.length) {
     tbl.innerHTML = '<div class="no-data">해당 월 클레임 상세 데이터가 없습니다.</div>';
   } else {
-    const trs = rows.map(r => `<tr>
-      <td>${esc(col(r,'거래처') || '—')}</td>
-      <td>${esc(col(r,'Product','제품명') || '—')}</td>
-      <td>${esc(col(r,'클레임내용','내용') || '—')}</td>
+    const trs = rows.map(r => { const c = claimCells(r); return `<tr>
+      <td>${esc(c.client || '—')}</td>
+      <td>${esc(c.product || '—')}</td>
+      <td>${esc(c.content || '—')}</td>
       <td>${esc(col(r,'클레임구분','ClaimType') || '—')}</td>
       <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
       <td>${esc(col(r,'상태','status') || '—')}</td>
-    </tr>`).join('');
+    </tr>`; }).join('');
     tbl.innerHTML = `<table><thead><tr>
       <th>거래처</th><th>제품명</th><th>내용</th><th>구분</th><th>조치방안</th><th>상태</th>
     </tr></thead><tbody>${trs}</tbody></table>`;
