@@ -226,6 +226,10 @@ tr:last-child td{border-bottom:none;}
           <tbody id="rd-prod-body"><tr><td colspan="4" class="no-data">데이터 없음</td></tr></tbody></table>
         </div>
       </div>
+      <div class="chart-grid c3">
+        <div class="chart-card wide"><div class="c-title">업체별 의뢰 현황 / n차 의뢰 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(막대: 의뢰건수 상위 15개 업체 · 꺾은선: 같은 제품 평균 n차 의뢰)</span></div><div class="chart-wrap tall"><canvas id="ch-rd-firm"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">업체별 픽스율 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;"><span id="rd-fixrate-note">(Fix건수 ÷ 의뢰건수, 의뢰 상위 5개 업체)</span></span></div><div class="chart-wrap tall"><canvas id="ch-rd-fixrate"></canvas></div></div>
+      </div>
       <div class="sec">업무 현황</div>
       <div class="chart-grid" style="grid-template-columns:repeat(5,1fr);">
         <div class="chart-card"><div class="c-title">CT건수</div><div class="chart-wrap"><canvas id="ch-rd-ct"></canvas></div></div>
@@ -1219,6 +1223,87 @@ function rndItemOf(r) {
   return '기타';
 }
 
+/* ── 업체별 의뢰 현황 / 픽스율 공통 ──
+   · 업체: 거래처 컬럼. '상호미정(신규거래처)'면 제품명 앞 [업체명]을 업체로 사용
+   · 기존/신규: 거래처가 '상호미정(신규거래처)'인 업체 = 신규, 그 외 = 기존 (한 번이라도 기존으로 잡히면 기존)
+   · 같은 달에 주간보고와 월간결산에 같은 제품이 중복으로 들어온 경우 월간결산 1건만 셉니다 */
+function firmName(raw) {
+  return String(raw||'').replace(/주식회사|\(주\)|㈜/g,'').replace(/\s*[\(（][^\)）]*[\)）]\s*/g,'').replace(/\s+/g,' ').trim();
+}
+function rndRequestRows(d) {
+  const rows = d.filter(r => num(col(r,'견본제안건수')) > 0);
+  const monthly = new Set(rows.filter(r=>!String(col(r,'데이터출처')).includes('주간보고'))
+                              .map(r=>col(r,'Month Name')+'|'+String(col(r,'Product')).trim()));
+  return rows.filter(r => !String(col(r,'데이터출처')).includes('주간보고')
+                       || !monthly.has(col(r,'Month Name')+'|'+String(col(r,'Product')).trim()))
+    .map(r => {
+      const c = String(col(r,'거래처')||'');
+      const isNew = c.includes('신규') || c.includes('상호미정');
+      const m = String(col(r,'Product')||'').match(/^\s*[\[［]([^\]］]+)[\]］]/);
+      const firm = isNew ? firmName(m ? m[1] : '미정') : firmName(c);
+      return { r, firm, isNew, cnt: num(col(r,'견본제안건수')), fix: num(col(r,'Fix건수')), base: productBase(col(r,'Product')) };
+    });
+}
+/* n차 의뢰 판단용 제품 기본명: [업체], 괄호, 개선/리뉴얼/CT/촬영용/임상용 등 꼬리표를 떼고 비교 */
+function productBase(p) {
+  return String(p||'').replace(/^\s*[\[［][^\]］]*[\]］]\s*/,'')
+    .replace(/[\(\[（［][^\)\]）］]*[\)\]）］]/g,' ')
+    .replace(/CT\s*-|CT용\s*(벌크)?|벌크\s*요청|촬영용|임상용|외부|확대\s*(품평용)?\s*샘플|샘플\s*요청|샘플|개선\s*(버전|요청|샘플)?|리뉴얼|제조사이관|\bv?\d+\b|-/gi,' ')
+    .replace(/\s+/g,'').toLowerCase();
+}
+
+function renderRndFirmCharts(d) {
+  const reqs = rndRequestRows(d);
+  const firms = {};
+  reqs.forEach(q => {
+    const f = firms[q.firm] || (firms[q.firm] = { name:q.firm, cnt:0, fix:0, isNew:true, bases:{} });
+    f.cnt += q.cnt; f.fix += q.fix;
+    if (!q.isNew) f.isNew = false;
+    f.bases[q.base] = (f.bases[q.base]||0) + q.cnt;
+  });
+  const list = Object.values(firms).map(f => {
+    const ns = Object.values(f.bases);
+    return {...f, avgN: ns.length ? f.cnt/ns.length : 0, maxN: ns.length ? Math.max(...ns) : 0};
+  }).sort((a,b)=>b.cnt-a.cnt);
+  const top = list.slice(0,15).sort((a,b)=>(a.isNew-b.isNew) || (b.cnt-a.cnt));   // 기존 먼저, 그다음 신규
+  makeChart('ch-rd-firm','bar',top.map(f=>f.name),[
+    {label:'기존 업체 의뢰', data:top.map(f=>f.isNew?0:f.cnt), backgroundColor:'#378ADD', borderRadius:3, stack:'f', order:2},
+    {label:'신규 업체 의뢰', data:top.map(f=>f.isNew?f.cnt:0), backgroundColor:'#E8B84B', borderRadius:3, stack:'f', order:2},
+    {label:'평균 n차 의뢰', type:'line', yAxisID:'y1', data:top.map(f=>+f.avgN.toFixed(1)), borderColor:'#D85A30', backgroundColor:'#D85A30',
+     borderWidth:2, pointRadius:4, fill:false, order:1, noLabel:true, maxN:top.map(f=>f.maxN)}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:18}},
+    plugins:{legend:{display:true,labels:{font:{size:10},boxWidth:10}},
+      tooltip:{callbacks:{label:c=> c.dataset.type==='line'
+        ? ` 평균 ${c.raw}차 (최대 ${c.dataset.maxN[c.dataIndex]}차)`
+        : (c.raw ? ` ${c.dataset.label}: ${c.raw}건` : null)}},
+      valuePctLabels:{enabled:true,mode:'value',fmt:'num'}},
+    scales:{
+      x:{stacked:true,ticks:{font:{size:10},autoSkip:false,maxRotation:45,minRotation:0}},
+      y:{stacked:true,beginAtZero:true,title:{display:true,text:'의뢰건수',font:{size:10}},ticks:{font:{size:10},precision:0}},
+      y1:{position:'right',beginAtZero:true,suggestedMax:3,grid:{drawOnChartArea:false},title:{display:true,text:'n차',font:{size:10}},ticks:{font:{size:10},callback:v=>v+'차'}}
+    }}});
+
+  // 업체별 픽스율 (월별): 의뢰 상위 5개 업체, Fix건수 ÷ 의뢰건수
+  const top5 = list.slice(0,5);
+  const pal = ['#378ADD','#D85A30','#1D9E75','#533AB7','#D4537E'];
+  const months = PERIODS();
+  const periodOf = r => periodKeyOf(r);
+  const fixTotal = reqs.reduce((s,q)=>s+q.fix,0);
+  makeChart('ch-rd-fixrate','line',months, top5.map((f,i)=>({
+    label:f.name, borderColor:pal[i], backgroundColor:pal[i], borderWidth:2, pointRadius:3, fill:false, spanGaps:true, noLabel:true,
+    data:months.map(m=>{
+      const qs = reqs.filter(q=>q.firm===f.name && periodOf(q.r)===m);
+      const c = qs.reduce((s,q)=>s+q.cnt,0);
+      return c ? +(qs.reduce((s,q)=>s+q.fix,0)/c*100).toFixed(1) : null;
+    })
+  })),{legend:true,extra:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},boxWidth:10}},
+      tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.raw}%`}}},
+    scales:{x:{ticks:{font:{size:10},autoSkip:false}},y:{beginAtZero:true,suggestedMax:100,ticks:{font:{size:10},callback:v=>v+'%'}}}}});
+  const note = document.getElementById('rd-fixrate-note');
+  if (note) note.textContent = fixTotal ? '(Fix건수 ÷ 의뢰건수, 의뢰 상위 5개 업체)'
+                                        : '(의뢰 상위 5개 업체 · 현재 시트에 Fix건수가 모두 0이라 0%로 표시)';
+}
+
 function renderRnd() {
   const d = filteredData;
   const rndFilter = r => String(col(r,'카테고리','Category')).includes('R&D') || String(col(r,'구분','type')).includes('R&D') || String(col(r,'신제품','NewProd')) === '1';
@@ -1253,6 +1338,7 @@ function renderRnd() {
     data:monthTotals(reqRows.filter(r=>rndItemOf(r)===it.label),'견본제안건수')
   })),{legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:18}},scales:{
     x:{ticks:{font:{size:10},autoSkip:false}},y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+  renderRndFirmCharts(d);
 
   // 신제품 진행현황 테이블 (연구원 담당자별: 건수 / 평균 리드타임 / 완료율)
   // 담당자 컬럼은 영업담당자 등 다른 데이터에서도 재사용되고 있어서,
