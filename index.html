@@ -219,16 +219,27 @@ tr:last-child td{border-bottom:none;}
         <div class="chart-card wide"><div class="c-title">신제품 매출 / 목표</div><div class="chart-wrap tall"><canvas id="ch-rd-main"></canvas></div></div>
         <div class="chart-card"><div class="c-title">견본제안 / Fix 건수</div><div class="chart-wrap tall"><canvas id="ch-rd-fix"></canvas></div></div>
       </div>
-      <div class="chart-grid c3">
-        <div class="chart-card wide"><div class="c-title">품목별 의뢰 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(견본제안 건수 · 제품명으로 품목 자동 분류)</span></div><div class="chart-wrap"><canvas id="ch-rd-form"></canvas></div></div>
-        <div class="chart-card"><div class="c-title">개발의뢰 진행현황 (담당자별)</div>
-          <table><thead><tr><th>담당자</th><th>의뢰건수</th><th>평균 리드타임</th><th>완료율</th></tr></thead>
-          <tbody id="rd-prod-body"><tr><td colspan="4" class="no-data">데이터 없음</td></tr></tbody></table>
-        </div>
+      <div class="sec">의뢰 현황</div>
+      <div class="chart-grid" style="grid-template-columns:1fr;">
+        <div class="chart-card"><div class="c-title">품목별 의뢰 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(견본제안 건수 · 제품명으로 품목 자동 분류)</span></div><div class="chart-wrap"><canvas id="ch-rd-form"></canvas></div></div>
       </div>
       <div class="chart-grid c3">
         <div class="chart-card wide"><div class="c-title">업체별 의뢰 현황 / n차 의뢰 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(막대: 의뢰건수 상위 15개 업체 · 꺾은선: 같은 제품 평균 n차 의뢰)</span></div><div class="chart-wrap tall"><canvas id="ch-rd-firm"></canvas></div></div>
         <div class="chart-card"><div class="c-title">업체별 픽스율 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;"><span id="rd-fixrate-note">(Fix건수 ÷ 의뢰건수, 의뢰 상위 5개 업체)</span></span></div><div class="chart-wrap tall"><canvas id="ch-rd-fixrate"></canvas></div></div>
+      </div>
+      <div class="sec">진행 · 이슈 현황</div>
+      <div class="chart-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="chart-card"><div class="c-title">PT 진행건수 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;"><span id="rd-pt-note"></span></span></div><div class="chart-wrap"><canvas id="ch-rd-pt"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">제형별 n차 진행 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(2차 이상 재의뢰 건수)</span></div><div class="chart-wrap"><canvas id="ch-rd-ncare"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">클레임 발생건 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;"><span id="rd-claim-note"></span></span></div><div class="chart-wrap"><canvas id="ch-rd-claim"></canvas></div></div>
+      </div>
+      <div class="sec">담당자별 현황</div>
+      <div class="chart-grid c3">
+        <div class="chart-card wide"><div class="c-title">개발의뢰 진행현황 (담당자별)</div>
+          <div class="table-scroll"><table><thead><tr><th>담당자</th><th>의뢰건수</th><th>평균 리드타임</th><th>N차 진행건수</th><th>제안 탈락률</th><th>CT 진행</th><th>최종 출시</th><th>픽스율</th><th>인벤토리 개발</th></tr></thead>
+          <tbody id="rd-prod-body"><tr><td colspan="9" class="no-data">데이터 없음</td></tr></tbody></table></div>
+        </div>
+        <div class="chart-card"><div class="c-title">담당자별 진행</div><div class="chart-wrap tall"><canvas id="ch-rd-rep"></canvas></div></div>
       </div>
       <div class="sec">업무 현황</div>
       <div class="chart-grid" style="grid-template-columns:repeat(5,1fr);">
@@ -1241,9 +1252,25 @@ function rndRequestRows(d) {
       const isNew = c.includes('신규') || c.includes('상호미정');
       const m = String(col(r,'Product')||'').match(/^\s*[\[［]([^\]］]+)[\]］]/);
       const firm = isNew ? firmName(m ? m[1] : '미정') : firmName(c);
-      return { r, firm, isNew, cnt: num(col(r,'견본제안건수')), fix: num(col(r,'Fix건수')), base: productBase(col(r,'Product')) };
-    });
+      return { r, firm, isNew, cnt: num(col(r,'견본제안건수')), fix: num(col(r,'Fix건수')), base: productBase(col(r,'Product')),
+               care: rndCareOf(r), rep: String(col(r,'담당자','R&D담당자')||'').trim() };
+    })
+    .map((q,i)=>({...q,i}))
+    .sort((a,b)=>(MONTHS.indexOf(col(a.r,'Month Name'))-MONTHS.indexOf(col(b.r,'Month Name'))) || (a.i-b.i))
+    .reduce((acc,q)=>{ const k=q.firm+'|'+q.base; acc.seen[k]=(acc.seen[k]||0)+1; q.nth=acc.seen[k]; acc.list.push(q); return acc; },{seen:{},list:[]}).list;
 }
+/* 스킨케어 / 선케어 / 퍼스널케어 구분: '케어구분' 컬럼 → '제형'이 퍼스널 → 품목 자동분류 순 */
+const RND_CARES = [{label:'스킨케어',color:'#378ADD'},{label:'선케어',color:'#E8B84B'},{label:'퍼스널케어',color:'#1D9E75'}];
+function rndCareOf(r) {
+  const g = String(col(r,'케어구분')||'').trim();
+  if (g) return g.includes('선') ? '선케어' : g.includes('퍼스널') ? '퍼스널케어' : '스킨케어';
+  if (String(col(r,'제형')||'').includes('퍼스널')) return '퍼스널케어';
+  const it = rndItemOf(r);
+  if (it === '선') return '선케어';
+  if (['샴푸바디','헤어에센스 앰플','립'].includes(it)) return '퍼스널케어';
+  return '스킨케어';
+}
+const isCT = q => /(^|[^a-z])CT([^a-z]|$)/i.test(String(col(q.r,'Product')||''));
 /* n차 의뢰 판단용 제품 기본명: [업체], 괄호, 개선/리뉴얼/CT/촬영용/임상용 등 꼬리표를 떼고 비교 */
 function productBase(p) {
   return String(p||'').replace(/^\s*[\[［][^\]］]*[\]］]\s*/,'')
@@ -1304,6 +1331,69 @@ function renderRndFirmCharts(d) {
                                         : '(의뢰 상위 5개 업체 · 현재 시트에 Fix건수가 모두 0이라 0%로 표시)';
 }
 
+function renderRndProgress(d) {
+  const reqs = rndRequestRows(d);
+  const P = PERIODS();
+  const byPeriod = (list, f) => P.map(p => list.filter(q => periodKeyOf(q.r)===p).reduce((s,q)=>s+f(q),0));
+  const monthlyScales = {x:{stacked:false,ticks:{font:{size:10},autoSkip:false}},y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}};
+
+  // PT 진행건수 — 'PT건수' 컬럼(행마다 건수) × 케어구분, 누적 막대
+  const ptRows = d.filter(r => num(col(r,'PT건수','PT진행건수')) > 0);
+  makeChart('ch-rd-pt','bar',P, RND_CARES.map(c=>({label:c.label, backgroundColor:c.color, borderRadius:2, stack:'pt',
+      data:monthTotalsMulti(ptRows.filter(r=>rndCareOf(r)===c.label),['PT건수','PT진행건수'])})),
+    {legend:true,dataLabels:true,dataLabelsMode:'stack',extra:{plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},boxWidth:10}}},
+      scales:{x:{stacked:true,ticks:{font:{size:10},autoSkip:false}},y:{stacked:true,beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+  setText('rd-pt-note', ptRows.length ? '(스킨/선/퍼스널케어)' : "(시트에 'PT건수' 컬럼 입력 시 표시)");
+
+  // 제형별 n차 진행 — 2차 이상 재의뢰 건수, 케어구분별 꺾은선
+  const nq = reqs.filter(q => q.nth >= 2);
+  makeChart('ch-rd-ncare','line',P, RND_CARES.map(c=>({label:c.label, borderColor:c.color, backgroundColor:c.color, borderWidth:2, pointRadius:3, fill:false,
+      data:byPeriod(nq.filter(q=>q.care===c.label), q=>q.cnt)})),
+    {legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:16}},plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},boxWidth:10}}},scales:monthlyScales}});
+
+  // 클레임 발생건 — '제조클레임' / '고객사클레임' / '원료이슈' 컬럼(건수)
+  const CL = [{k:'제조클레임',color:'#378ADD'},{k:'고객사클레임',color:'#D85A30'},{k:'원료이슈',color:'#1D9E75'}];
+  const clTotal = CL.reduce((s,c)=>s+d.reduce((a,r)=>a+num(col(r,c.k)),0),0);
+  makeChart('ch-rd-claim','bar',P, CL.map(c=>({label:c.k, backgroundColor:c.color, borderRadius:2, data:monthTotals(d,c.k)})),
+    {legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:16}},plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},boxWidth:10}}},scales:monthlyScales}});
+  setText('rd-claim-note', clTotal ? '' : "(시트에 '제조클레임/고객사클레임/원료이슈' 컬럼 입력 시 표시)");
+
+  // 개발의뢰 진행현황 (담당자별)
+  const reps = {};
+  reqs.forEach(q => {
+    if (!q.rep) return;
+    const v = reps[q.rep] || (reps[q.rep] = {cnt:0, leadSum:0, leadCnt:0, nth:0, drop:0, ct:0, launch:0, fix:0, inv:0});
+    v.cnt += q.cnt; v.fix += q.fix;
+    const lead = col(q.r,'리드타임','LeadTime');
+    if (lead !== '' && lead !== undefined) { v.leadSum += num(lead); v.leadCnt++; }
+    if (q.nth >= 2) v.nth += q.cnt;
+    if (isCT(q)) v.ct += q.cnt;
+    const st = String(col(q.r,'상태','진행상태')||'');
+    if (/탈락|드랍|드롭|drop|불채택/i.test(st)) v.drop += q.cnt;
+    if (/출시|런칭|launch/i.test(st)) v.launch += q.cnt;
+    if (/인벤토리/i.test(String(col(q.r,'구분','개발구분','Product')||'')) || num(col(q.r,'인벤토리개발'))>0) v.inv += 1;
+  });
+  const repList = Object.entries(reps).sort((a,b)=>b[1].cnt-a[1].cnt);
+  const pct = (a,b) => b ? (a/b*100).toFixed(1)+'%' : '—';
+  // 아직 시트에 해당 정보가 하나도 없는 항목은 0 대신 '—'로 표시 (0%가 실제 실적처럼 보이지 않도록)
+  const has = k => repList.some(([,v])=>v[k]>0);
+  const hD=has('drop'), hL=has('launch'), hF=has('fix'), hI=has('inv');
+  document.getElementById('rd-prod-body').innerHTML = repList.length
+    ? repList.map(([n,v]) => `<tr><td>${esc(n)}</td><td>${v.cnt}건</td><td>${v.leadCnt?(v.leadSum/v.leadCnt).toFixed(1)+'일':'—'}</td>
+        <td>${v.nth}건</td><td>${hD?pct(v.drop,v.cnt):'—'}</td><td>${v.ct}건</td><td>${hL?v.launch+'건':'—'}</td><td>${hF?pct(v.fix,v.cnt):'—'}</td><td>${hI?v.inv+'건':'—'}</td></tr>`).join('')
+    : '<tr><td colspan="9" style="text-align:center;color:#bbb;padding:16px;">데이터 없음</td></tr>';
+
+  // 담당자별 진행 — n차진행 / CT / 문안 (상위 6명)
+  const top = repList.slice(0,6).map(([n])=>n);
+  const copyBy = n => d.filter(r=>String(col(r,'담당자','R&D담당자')||'').trim()===n).reduce((s,r)=>s+num(col(r,'문안검수건수')),0);
+  makeChart('ch-rd-rep','bar',top,[
+    {label:'n차 진행', backgroundColor:'#378ADD', borderRadius:2, data:top.map(n=>reps[n].nth)},
+    {label:'CT',       backgroundColor:'#D85A30', borderRadius:2, data:top.map(n=>reps[n].ct)},
+    {label:'문안',     backgroundColor:'#1D9E75', borderRadius:2, data:top.map(copyBy)}
+  ],{legend:true,dataLabels:true,dataLabelsMode:'value',extra:{layout:{padding:{top:16}},plugins:{legend:{display:true,position:'bottom',labels:{font:{size:10},boxWidth:10}}},
+    scales:{x:{ticks:{font:{size:10},autoSkip:false}},y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
+}
+
 function renderRnd() {
   const d = filteredData;
   const rndFilter = r => String(col(r,'카테고리','Category')).includes('R&D') || String(col(r,'구분','type')).includes('R&D') || String(col(r,'신제품','NewProd')) === '1';
@@ -1340,25 +1430,7 @@ function renderRnd() {
     x:{ticks:{font:{size:10},autoSkip:false}},y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
   renderRndFirmCharts(d);
 
-  // 신제품 진행현황 테이블 (연구원 담당자별: 건수 / 평균 리드타임 / 완료율)
-  // 담당자 컬럼은 영업담당자 등 다른 데이터에서도 재사용되고 있어서,
-  // 이름으로 거르지 않고 카테고리가 'R&D'인 행만 R&D 개발의뢰로 집계한다.
-  const rdProdRows = d.filter(r => String(col(r,'카테고리','Category')).trim() === 'R&D');
-  const byRep = {};
-  rdProdRows.forEach(r => {
-    const rep = String(col(r,'담당자','R&D담당자','신제품담당자','Rep') || '').trim();
-    if (!rep) return;
-    if (!byRep[rep]) byRep[rep] = { cnt:0, leadSum:0, leadCnt:0, doneCnt:0 };
-    byRep[rep].cnt++;
-    const leadRaw = col(r,'리드타임','LeadTime');
-    if (leadRaw !== '' && leadRaw !== undefined) { byRep[rep].leadSum += num(leadRaw); byRep[rep].leadCnt++; }
-    const status = String(col(r,'상태','Status','진행상태','status'));
-    if (status.includes('완료') || status.toLowerCase().includes('done')) byRep[rep].doneCnt++;
-  });
-  const repEntries = Object.entries(byRep).sort((a,b)=>b[1].cnt-a[1].cnt);
-  document.getElementById('rd-prod-body').innerHTML = repEntries.length
-    ? repEntries.map(([rep,v]) => `<tr><td>${rep}</td><td>${v.cnt}건</td><td>${v.leadCnt?(v.leadSum/v.leadCnt).toFixed(1):'—'}일</td><td>${v.cnt?(v.doneCnt/v.cnt*100).toFixed(1):0}%</td></tr>`).join('')
-    : '<tr><td colspan="4" style="text-align:center;color:#bbb;padding:16px;">데이터 없음</td></tr>';
+  renderRndProgress(d);
 
   const rdWorkChart = (id, key, color) => {
     const vals = monthTotals(d, key);
