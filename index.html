@@ -947,14 +947,47 @@ function renderAll() {
   renderMgmt();
 }
 
-/* 클레임구분 값별로 데이터셋을 자동 생성 (내부/외부 하드코딩 제거) */
+/* 클레임 / 컴플레인 현황: 품질팀 양식대로 '외부불만' / '내부불만' 2개만 표시.
+   데이터의 '내부불만(포장재)', '내부불만(벌크제품)' 등은 모두 '내부불만'으로 합산합니다. */
+const CLAIM_GROUPS = [
+  {label:'외부불만', color:'#D85A30'},
+  {label:'내부불만', color:'#378ADD'}
+];
+function claimGroupOf(r) {
+  const k = String(col(r,'클레임구분','ClaimType')||'').replace(/\s+/g,'');
+  if (!k) return '';
+  if (k.startsWith('외부')) return '외부불만';
+  if (k.startsWith('내부')) return '내부불만';
+  return '';
+}
 function claimDatasets(d) {
-  const kinds = [...new Set(d.map(r=>String(col(r,'클레임구분','ClaimType')||'').trim()).filter(Boolean))].sort();
-  if (!kinds.length) return [{label:'클레임건수',data:new Array(12).fill(0),backgroundColor:'#D85A30'}];
-  // 막대 하나에 쌓아서 보기 불편하다는 피드백으로 항목별 막대를 나눔(그룹형, stack 제거)
-  return kinds.map((k,i)=>({
-    label:k, borderRadius:3, backgroundColor:COLORS[(i+2)%COLORS.length],
-    data:monthTotals(d.filter(r=>String(col(r,'클레임구분','ClaimType')).trim()===k),'클레임건수')
+  return CLAIM_GROUPS.map(g=>({
+    label:g.label, borderRadius:3, backgroundColor:g.color,
+    data:monthTotals(d.filter(r=>claimGroupOf(r)===g.label),'클레임건수')
+  }));
+}
+
+/* 불량 유형별 현황: 품질팀 '불량 유형별 현황' 8개 항목.
+   클레임구분 '내부불만(포장재)' → 괄호 안 '포장재'를 유형으로 사용합니다. */
+const DEFECT_TYPES = [
+  {label:'원료',     color:'#378ADD'},
+  {label:'벌크제품', color:'#D85A30'},
+  {label:'포장재',   color:'#E8B84B'},
+  {label:'공정검사', color:'#533AB7'},
+  {label:'완제품',   color:'#1D9E75'},
+  {label:'미생물',   color:'#D4537E'},
+  {label:'분석',     color:'#639922'},
+  {label:'출하',     color:'#BA7517'}
+];
+function defectTypeOf(r) {
+  if (claimGroupOf(r) !== '내부불만') return '';
+  const m = String(col(r,'클레임구분','ClaimType')||'').replace(/\s+/g,'').match(/\((.+?)\)/);
+  return m ? m[1] : '';
+}
+function defectTypeDatasets(d) {
+  return DEFECT_TYPES.map(t=>({
+    label:t.label, borderRadius:3, backgroundColor:t.color, stack:'q',
+    data:monthTotals(d.filter(r=>defectTypeOf(r)===t.label),'클레임건수')
   }));
 }
 
@@ -1375,7 +1408,7 @@ function renderQuality() {
   const ms = monthScope(); // 당월(가장 최근 실적 있는 달) 기준
   // '클레임건수' 컬럼은 실제 클레임(클레임구분 있음)뿐 아니라 품질팀 불량유형별현황 기록도 같이 쌓여있어서,
   // 진짜 클레임 집계 시에는 클레임구분 값이 있는 행만 걸러서 셉니다.
-  const isRealClaim = r => String(col(r,'클레임구분','ClaimType')||'').trim() !== '';
+  const isRealClaim = r => claimGroupOf(r) !== '';
   const claimCnt = d.filter(isRealClaim).reduce((s,r)=>s+num(col(r,'클레임건수','ClaimCnt')),0);
   const claimAmt = d.filter(isRealClaim).reduce((s,r)=>s+num(col(r,'클레임금액','ClaimAmt')),0);
   const defect   = d.reduce((s,r)=>s+num(col(r,'불량건수','DefectCnt')),0);
@@ -1402,11 +1435,7 @@ function renderQuality() {
     y:{beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
   syncClaimDetailWithFilter();
 
-  makeChart('ch-ql-defect','bar',PERIODS(),[
-    {label:'원(벌크)불량',data:monthTotals(d,'원불량'),backgroundColor:'#D85A30',borderRadius:3,stack:'q'},
-    {label:'작업불량',data:monthTotals(d,'작업불량'),backgroundColor:'#E8B84B',borderRadius:3,stack:'q'},
-    {label:'기타(이물 등)',data:monthTotals(d,'기타불량'),backgroundColor:'#BA7517',borderRadius:3,stack:'q'}
-  ],{legend:true,dataLabels:true,dataLabelsMode:'stack',extra:{scales:{
+  makeChart('ch-ql-defect','bar',PERIODS(),defectTypeDatasets(d),{legend:true,dataLabels:true,dataLabelsMode:'stack',extra:{scales:{
     x:{stacked:true,ticks:{font:{size:10},autoSkip:false}},
     y:{stacked:true,beginAtZero:true,ticks:{font:{size:10},precision:0}}}}});
 
