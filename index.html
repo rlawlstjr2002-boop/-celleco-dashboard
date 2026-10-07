@@ -287,7 +287,15 @@ tr:last-child td{border-bottom:none;}
         </div>
       </div>
       <div class="chart-grid" style="grid-template-columns:1fr;">
-        <div class="chart-card"><div class="c-title">불량 유형별 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(막대 안 숫자는 비중)</span></div><div class="chart-wrap"><canvas id="ch-ql-defect"></canvas></div></div>
+        <div class="chart-card"><div class="c-title">불량 유형별 현황 <span style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;">(막대 안 숫자는 비중 · 막대 더블클릭: 해당 월 상세 표시)</span></div><div class="chart-wrap"><canvas id="ch-ql-defect"></canvas></div></div>
+      </div>
+      <div class="chart-grid" style="grid-template-columns:1fr;" id="ql-defect-detail-wrap" hidden>
+        <div class="chart-card">
+          <div class="c-title">불량 유형별 상세 <span id="ql-defect-detail-month" style="font-weight:400;color:#aaa;text-transform:none;letter-spacing:normal;"></span>
+            <span onclick="document.getElementById('f-month').value='';updateWeekOptions();applyFilters();" style="float:right;cursor:pointer;color:#aaa;font-weight:400;text-transform:none;">✕ 전체보기로 닫기</span>
+          </div>
+          <div id="ql-defect-detail-table" class="table-scroll"></div>
+        </div>
       </div>
       <div class="sec">검사 현황</div>
       <div class="chart-grid" style="grid-template-columns:repeat(4,1fr);">
@@ -947,8 +955,8 @@ function renderAll() {
   renderMgmt();
 }
 
-/* 클레임 / 컴플레인 현황: 품질팀 양식대로 '외부불만' / '내부불만' 2개만 표시.
-   데이터의 '내부불만(포장재)', '내부불만(벌크제품)' 등은 모두 '내부불만'으로 합산합니다. */
+/* 클레임 / 컴플레인 현황: 품질팀 양식 '불만 및 클레임 현황'의 외부 / 내부 2개만 표시.
+   '내부불만(포장재)'처럼 괄호가 붙은 값은 불만이 아니라 '불량 유형별 현황' 항목이므로 여기서 제외합니다. */
 const CLAIM_GROUPS = [
   {label:'외부불만', color:'#D85A30'},
   {label:'내부불만', color:'#378ADD'}
@@ -956,6 +964,7 @@ const CLAIM_GROUPS = [
 function claimGroupOf(r) {
   const k = String(col(r,'클레임구분','ClaimType')||'').replace(/\s+/g,'');
   if (!k) return '';
+  if (k.includes('(')) return '';           // 내부불만(포장재) 등 → 불량 유형
   if (k.startsWith('외부')) return '외부불만';
   if (k.startsWith('내부')) return '내부불만';
   return '';
@@ -980,7 +989,6 @@ const DEFECT_TYPES = [
   {label:'출하',     color:'#BA7517'}
 ];
 function defectTypeOf(r) {
-  if (claimGroupOf(r) !== '내부불만') return '';
   const m = String(col(r,'클레임구분','ClaimType')||'').replace(/\s+/g,'').match(/\((.+?)\)/);
   return m ? m[1] : '';
 }
@@ -1378,9 +1386,9 @@ function claimCells(r) {
 function syncClaimDetailWithFilter() {
   const month = document.getElementById('f-month').value;
   const wrap = document.getElementById('ql-claim-detail-wrap');
-  if (!month) { wrap.hidden = true; return; }
+  if (!month) { wrap.hidden = true; syncDefectDetailWithFilter(''); return; }
 
-  const rows = filteredData.filter(r => num(col(r,'클레임건수','ClaimCnt')) > 0);
+  const rows = filteredData.filter(r => claimGroupOf(r) && num(col(r,'클레임건수','ClaimCnt')) > 0);
   const tbl = document.getElementById('ql-claim-detail-table');
   document.getElementById('ql-claim-detail-month').textContent = `(${month}, ${rows.length}건)`;
 
@@ -1397,6 +1405,34 @@ function syncClaimDetailWithFilter() {
     </tr>`; }).join('');
     tbl.innerHTML = `<table><thead><tr>
       <th>거래처</th><th>제품명</th><th>내용</th><th>구분</th><th>조치방안</th><th>상태</th>
+    </tr></thead><tbody>${trs}</tbody></table>`;
+  }
+  wrap.hidden = false;
+  syncDefectDetailWithFilter(month);
+}
+
+function syncDefectDetailWithFilter(month) {
+  const wrap = document.getElementById('ql-defect-detail-wrap');
+  if (!wrap) return;
+  if (!month) { wrap.hidden = true; return; }
+  const order = DEFECT_TYPES.map(t=>t.label);
+  const rows = filteredData.filter(r => defectTypeOf(r) && num(col(r,'클레임건수','ClaimCnt')) > 0)
+    .sort((a,b)=>order.indexOf(defectTypeOf(a))-order.indexOf(defectTypeOf(b)));
+  const tbl = document.getElementById('ql-defect-detail-table');
+  document.getElementById('ql-defect-detail-month').textContent = `(${month}, ${rows.length}건)`;
+  if (!rows.length) {
+    tbl.innerHTML = '<div class="no-data">해당 월 불량 상세 데이터가 없습니다.</div>';
+  } else {
+    const trs = rows.map(r => { const c = claimCells(r); return `<tr>
+      <td>${esc(defectTypeOf(r))}</td>
+      <td>${esc(c.client || '—')}</td>
+      <td>${esc(c.product || '—')}</td>
+      <td>${esc(c.content || '—')}</td>
+      <td>${esc(col(r,'조치방안','처리/조치 내용','조치내용') || '—')}</td>
+      <td>${esc(col(r,'상태','status') || '—')}</td>
+    </tr>`; }).join('');
+    tbl.innerHTML = `<table><thead><tr>
+      <th>유형</th><th>거래처</th><th>제품명</th><th>내용</th><th>조치방안</th><th>상태</th>
     </tr></thead><tbody>${trs}</tbody></table>`;
   }
   wrap.hidden = false;
